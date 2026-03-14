@@ -2,6 +2,9 @@
 
 This project contains code for training reinforcement learning agents on a robotic arm using Gazebo and PyTorch.
 
+source ~/anaconda3/etc/profile.d/conda.sh
+conda activate RL-for-Robotic-Arm
+
 ## Environment Setup
 
 We use **conda** to manage dependencies. GPU support for PyTorch can be added later.

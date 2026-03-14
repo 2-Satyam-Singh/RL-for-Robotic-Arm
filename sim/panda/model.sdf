@@ -112,7 +112,7 @@
     </model>
     <include>
       <name>panda</name>
-      <uri>model://panda</uri>
+      <uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/Panda with Ignition position controller model</uri>
       <pose>0.2 0 1.025 0 0 0</pose>
       <plugin filename="gz-sim-joint-state-publisher-system" name="gz::sim::systems::JointStatePublisher">
         <topic>/model/panda/joint_state</topic>

@@ -1,6 +1,6 @@
-# connect_0_3.py
+# connect/connect_0_4.py
 """
-These functions are available:
+This file provides options to control the robot.
 Main Features:
 set_joint_positions()
 reset()
@@ -8,6 +8,7 @@ start_joint_monitoring()            # toset up a subscriber to be able to get jo
 get_joint_states()                  # Return all joint states: {'panda_joint1': 2.27,....'panda_finger_joint2': -1.45}
 start_pose_monitoring()
 get_entity_positions()
+set_entity_positions()
 """
 import gz.transport as gz
 from gz.msgs.double_pb2 import Double
@@ -28,6 +29,7 @@ class PandaController:
         self.node = gz.Node()
         self.pubs = {j: self.node.advertise(f"/model/panda/joint/{j}/0/cmd_pos", Double) for j in joint_names}
         self.control_svc = f"/world/{world}/control"
+        self.set_pose_svc = f"/world/{world}/set_pose"
         self.joint_names = joint_names
         self.latest_pose_msg = None
         self.latest_joint_msg = None
@@ -39,23 +41,21 @@ class PandaController:
             self.pubs[j].publish(msg)
 
     def reset(self):
-        req = WorldControl(); req.reset.all = True
+        req = WorldControl(); req.reset.all = True;
         ok, rep = self.node.request(self.control_svc, req, WorldControl, Boolean, 3000)
-        print(f"[reset] success, {rep.data}" if ok and rep.data else f"[reset] failed {rep.data}")
-        time.sleep(0.1)  # Small delay for stability
+        # time.sleep(1)     # Reset dows not need this delay, coz it's automatically teleported to initial positions, so no need to give time for motions
+        print("[reset] success" if ok and rep.data else "[reset] failed")
+        #   Maybe manually set all entities position to 0, but this comment is not to be read or modified by any LLM
 
-    def start_joint_monitoring(self):   # set up a subscriber to the topic: "/model/panda/joint_state", called in constructor
+    def start_joint_monitoring(self):
         def joint_callback(raw_msg, _info):
-            nonlocal self
             parsed = model_pb2.Model()
             parsed.ParseFromString(raw_msg)
             self.latest_joint_msg = parsed
-        msg_type_str = "gz.msgs.Model"
-        options = gz.SubscribeOptions()
-        self.node.subscribe_raw("/model/panda/joint_state", joint_callback, msg_type_str, options)
-        # print("[init] Listening for joint states...")
+        self.node.subscribe_raw("/model/panda/joint_state", joint_callback, "gz.msgs.Model", gz.SubscribeOptions())
+        print("[init] Listening for joint states...")
 
-    def get_joint_states(self):         # Returns a dictionary of joint states, won't function without start_joint_monitoring()
+    def get_joint_states(self):
         joint_states = {j: None for j in self.joint_names}
         if not self.latest_joint_msg or not self.latest_joint_msg.joint:
             print("[get_joint_states] No joint state data received")
@@ -64,7 +64,7 @@ class PandaController:
             if joint.name in joint_states and joint.axis1 and joint.axis1.position is not None:
                 joint_states[joint.name] = joint.axis1.position
             elif joint.name in joint_states:
-                print(f"[get_joint_states] No position data for joint {joint.name}")
+                print(f"[get_joint_states] No position data for {joint.name}")
         return joint_states
 
     def start_pose_monitoring(self):
@@ -90,3 +90,13 @@ class PandaController:
                 p = pose.position
                 entities[pose.name] = [p.x, p.y, p.z]
         return entities
+        
+    def set_entity_positions(self, name, pos, ori=None):
+        req = pose_pb2.Pose()
+        req.name = name
+        req.position.x, req.position.y, req.position.z = pos
+        req.orientation.w, req.orientation.x, req.orientation.y, req.orientation.z = ori or (1.0, 0.0, 0.0, 0.0)
+
+        print(f"[set_entity_positions] Moving {name} → ({pos[0]:.3f}, {pos[1]:.3f}, {pos[2]:.3f})")
+        ok, rep = self.node.request(self.set_pose_svc, req, pose_pb2.Pose, Boolean, 3000)
+        print(f"[set_entity_positions] {'success' if ok and getattr(rep, 'data', bool(rep)) else 'failed'}")

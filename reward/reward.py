@@ -1,4 +1,4 @@
-# reward/reward_0_3.py
+# reward/reward_0_4.py
 """
 Reward shaping for PandaEnv.
 

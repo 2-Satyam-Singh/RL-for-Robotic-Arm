@@ -1,3 +1,7 @@
 gz-transport-python
 gz-msgs-python
+gz-msgs
 protobuf
+numpy
+matplotlib
+pytorch

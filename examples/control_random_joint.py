@@ -1,3 +1,4 @@
+# control_0_3.py
 """
 This is the main file and it currently perform 
 JOINT VALUE UPDATIONS
@@ -5,45 +6,47 @@ RESET the environment
 RECIVENG JOINT STATE
 """
 import random, time
-from robots.panda_controller import PandaController, JOINTS, LIMITS
+from controller.panda_controller import PandaController
 
-# ──────── Removed finger joints for training (only 7 arm joints now) ────────
-ARM_JOINTS = JOINTS[:-2]      # panda_joint1..7 only
-ARM_LIMITS = LIMITS[:-2]
+random.seed(42)
 
-# Hyperparameter — will be loaded from .yaml later
-DECIMAL_PLACES = 1   # ← change here (or in yaml) to 2 / 0 / 0.5 etc.
+JOINTS = [f"panda_joint{i}" for i in range(1, 8)] + ["panda_finger_joint1", "panda_finger_joint2"]
+LIMITS = [(-2.9, 2.9), (-1.76, 1.76), (-2.9, 2.9), (-3.07, -0.07),(-2.9, 2.9), (-0.02, 3.75), (-2.9, 2.9), (0, 0.04), (0, 0.04)]
+LOOP_FREQUENCY = 1
 
 def main():
     ctrl = PandaController(JOINTS)
-    print(f"[init] Panda controller active (fingers excluded, precision = {DECIMAL_PLACES} decimal places).")
+    print("[init] Panda controller active.")
+    ctrl.start_pose_monitoring()  # Start continuous pose subscription
+
     i = 0
     while True:
+        
 # >---> Reset
-        # if i % 100 == 0:
-        #     print("[reset] Resetting the world.")
-        #     ctrl.reset()
+        if i % 10 == 0:
+            print("[reset] Resetting the world.")
+            ctrl.reset()
 
 # >---> Previous State
         js = ctrl.get_joint_states()  # Get joint states
-        js = {j: round(v, DECIMAL_PLACES) if v is not None else None for j, v in js.items()}  # restricted precision
-        print(f"[state] Joints: {js}")  # Print old joint states
+        # print(f"[state] Joints: {js}")  # Print old joint states
+
+        pos = ctrl.get_entity_positions()  # Print latest entity positions
+        print(f"[state] Positions: {pos}\n")
 
 # >---> Action Performed
-        pos = {j: round(random.uniform(*lim), DECIMAL_PLACES) for j, lim in zip(ARM_JOINTS, ARM_LIMITS)} # Random actions (restricted)
+        pos = {j: random.uniform(*lim) for j, lim in zip(JOINTS, LIMITS)}  # Random actions
         # OR
-        # pos = {j: round(js[j] + 1, DECIMAL_PLACES) for j, lim in zip(ARM_JOINTS, ARM_LIMITS)} # now safe, no None issue
-        
-        ctrl.set_positions(pos)
-        time.sleep(1)
+        # pos = {j: js[j] + 1 for j, lim in zip(JOINTS, LIMITS)}  # This can sometimes fail, because sometimes the value for all keys returned by js is "None", but at other times, it gives proper values, so works fine... it's just random.. need a way to handle in case of 'None'
+
+        ctrl.set_joint_positions(pos)
+        time.sleep(LOOP_FREQUENCY)       # Need this time to move the joints
 
 # >---> New State & Result
-        js = ctrl.get_joint_states()
-        js = {j: round(v, DECIMAL_PLACES) if v is not None else None for j, v in js.items()}  # restricted precision
-        print(f"[state] Joints: {js}") # Print new joint states (now rounded)
+        # print(f"[state] Joints: {ctrl.get_joint_states()}")  # Print new joint states
+
 
         i += 1
-
 
 if __name__ == "__main__":
     main()

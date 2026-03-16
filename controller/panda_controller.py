@@ -1,4 +1,3 @@
-# connect/connect_0_4.py
 """
 This file provides options to control the robot.
 Main Features:
@@ -34,6 +33,7 @@ class PandaController:
         self.latest_pose_msg = None
         self.latest_joint_msg = None
         self.start_joint_monitoring()
+        self.start_pose_monitoring()  # Ensures pose data (including links) is available early
 
     def set_joint_positions(self, positions):
         for j, val in positions.items():
@@ -100,3 +100,36 @@ class PandaController:
         print(f"[set_entity_positions] Moving {name} → ({pos[0]:.3f}, {pos[1]:.3f}, {pos[2]:.3f})")
         ok, rep = self.node.request(self.set_pose_svc, req, pose_pb2.Pose, Boolean, 3000)
         print(f"[set_entity_positions] {'success' if ok and getattr(rep, 'data', bool(rep)) else 'failed'}")
+
+    def get_end_effector_pose(self):
+        if not self.latest_pose_msg:
+            print("[get_end_effector_pose] No pose data received yet")
+            return None
+
+        ee_link_name = "panda_hand"
+        ee_pose = None
+        for pose in self.latest_pose_msg.pose:
+            if pose.name == ee_link_name:
+                ee_pose = pose
+                break
+
+        if ee_pose is None:
+            # Debug: Print available pose names once to verify (remove after confirming)
+            if not hasattr(self, '_debug_poses_printed'):
+                print(f"[get_end_effector_pose] EE link '{ee_link_name}' not found. Available pose names: {[p.name for p in self.latest_pose_msg.pose]}")
+                self._debug_poses_printed = True
+            return None
+
+        pos = [
+            ee_pose.position.x,
+            ee_pose.position.y,
+            ee_pose.position.z
+        ]
+        ori = [
+            ee_pose.orientation.x,
+            ee_pose.orientation.y,
+            ee_pose.orientation.z,
+            ee_pose.orientation.w
+        ]
+        return {"position": pos, "orientation": ori}
+    

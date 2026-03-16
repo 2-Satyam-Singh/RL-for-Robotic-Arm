@@ -1,8 +1,12 @@
-# environment/environment_0_4.py
+# environment/environment_0_5.py
 """
 Environment wrapper around PandaController.
 Exposes a Gym-like API: reset(), step(action).
 Normalizes + flattens observations for learning algorithms.
+
+These functions are available:
+- reset(): Reset the environment to initial state.
+- step(action): Apply action, return (obs, reward, done, info).
 """
 
 import time
@@ -65,6 +69,14 @@ class PandaEnv:
 
         flat_obs = np.array(joint_vals + entity_vals, dtype=np.float32)
         return flat_obs
+    
+    def _denormalize_action(self, action):
+        if isinstance(action, dict):
+            return action  # Already raw
+        denorm_vals = []
+        for val, (low, high) in zip(action, self.limits):
+            denorm_vals.append(low + (val + 1.0) * (high - low) / 2.0 if high > low else low)
+        return dict(zip(self.joints, denorm_vals))
 
     def _action_to_dict(self, action):                      # is this even necessary?
         """

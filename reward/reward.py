@@ -1,170 +1,123 @@
-# reward/reward_0_4.py
+# reward/reward_0_5.py
 """
-Reward shaping for PandaEnv.
+Reward shaping for PandaEnv (v0_5) - Push entity off table to ground.
+Design goals:
+- Reward initial contact/displacement (moderate, no early termination).
+- High reward for dropping entity off table (proportional to drop distance/speed).
+- Bonus for success (entity on ground, z <= GROUND_Z).
+- Encourage large actions/efficiency: Scale movement by entity effect, small step penalty.
+- Penalize unnecessary actions via living penalty and mobility factor.
+- No high reward on touch alone; allow fall time.
 
-Design goals (summary):
-- Encourage the robot to move (reduce "hesitation").
-- Prefer movement that affects the entity (so robot doesn't just flail to get movement reward).
-- Give higher reward for touching/displacing the entity.
-- Highest reward when the entity is thrown to the ground (success).
-- Keep a small structure so you can tune weights/thresholds easily.
-
-This module is stateful: it keeps last-step joint/entity poses to compute deltas.
-Call reset_reward() when the environment is reset (PandaEnv.reset()) so the history clears.
+Stateful: Tracks last positions for deltas.
+Call reset_reward() in env.reset().
 """
 
-from math import sqrt
+from utils.utils import euclidean_distance, clamp, validate_obs
 
-# ---- module state (last-step info) ----
-_last_entity_pos = None   # e.g. [x,y,z] for the tracked target entity (first matching entity)
-_last_joint_pos = None    # dict: {joint_name: value}
+# Module state
+_last_entity_pos = None
+_last_joint_pos = None
 
-# ---- tunable parameters (small, understandable) ----
-GROUND_Z = 0.10                 # z <= this => considered "thrown off table / on ground"
-TOUCH_DISP_THRESH = 0.02        # entity displacement >= 2 cm -> treat as 'touch/move'
-DROP_NORM = 0.20                # normalize significant drop amount (meters)
-# weights
-W_MOVEMENT = 0.30               # reward weight for joint movement (when it helps the object)
-W_DROP     = 1.0                # reward weight for vertical drop of the object
-W_TOUCH    = 1.0                # reward for touching / displacing the object
-W_THROW    = 5.0                # big reward for throwing object to ground (success)
-STEP_PENALTY = 0.0              # optional small step penalty (negative) to discourage pointless moves
-
-# ---- helper functions ----
-def _euclid(a, b):
-    if a is None or b is None:
-        return 0.0
-    return sqrt(sum((ai - bi) ** 2 for ai, bi in zip(a, b)))
+# Tunable parameters
+GROUND_Z = 0.10  # z <= this = success (on ground)
+TABLE_Z = 1.025  # Approximate table height (from Gazebo poses)
+TOUCH_DISP_THRESH = 0.02  # Min displacement for "touch" (meters)
+DROP_SCALE = 2.0  # Reward per meter of vertical drop
+SPEED_BONUS_THRESH = 0.1  # Min drop speed (m/step) for bonus
+MOVEMENT_SCALE = 0.5  # Weight for large joint movements
+LIVING_PENALTY = -0.01  # Small per-step penalty for efficiency
+TOUCH_REWARD = 0.5  # Moderate for initial contact (avoids early done)
+DROP_REWARD = 2.0  # Base for significant drop
+SUCCESS_REWARD = 5.0  # High for ground hit
 
 def reset_reward():
-    """Clear internal last-step memory. Call this in PandaEnv.reset()."""
+    """Clear history for new episode."""
     global _last_entity_pos, _last_joint_pos
     _last_entity_pos = None
     _last_joint_pos = None
 
-def _safe_midpoint(joint_name, joint_idx, joint_limits):
-    """Return midpoint of joint range if value missing."""
+def _safe_midpoint(joint_idx, joint_limits):
+    """Midpoint if joint value missing."""
     lo, hi = joint_limits[joint_idx]
     return 0.5 * (lo + hi)
 
-# ---- main API ----
-def compute_reward(obs, target_entities, joint_limits=None):
-    """
-    Compute shaped reward.
+def _compute_drop_speed(curr_z, last_z, dt=0.1):
+    """Drop speed (m/s), positive downward."""
+    if last_z is None:
+        return 0.0
+    return clamp((last_z - curr_z) / dt, max_val=1.0)
 
+def compute_reward(obs, entities, joint_limits):
+    """
+    Compute shaped reward for pushing entity off table.
     Args:
-      obs: dict with keys "joints" (dict joint_name->value) and "entities" (dict name->[x,y,z]).
-      target_entities: set/list of entity names to consider (same as before).
-      joint_limits: optional list of (low,high) tuples in same order as env.joints.
-                    If provided, movement normalization is better. If not provided,
-                    movement normalization will be approximate.
-
+        obs: dict {"joints": {name: val}, "entities": {name: [x,y,z]}}
+        entities: list of entity names
+        joint_limits: list of (low, high) tuples
     Returns:
-      float reward >= 0 (higher is better). Very large reward W_THROW returned
-      when entity hits ground (curr_z <= GROUND_Z).
+        float: Reward in [0, 5+], high for ground success.
     """
-
     global _last_entity_pos, _last_joint_pos
+    obs = validate_obs(obs, [], entities, joint_limits)
+    obs_entities = obs["entities"]
 
-    # Quick guards
-    if not obs or "entities" not in obs:
-        # If no entity data, give zero (or a tiny movement reward if you prefer)
+    # Find target entity (first match)
+    target_name = next((name for name in obs_entities if name in entities), None)
+    if not target_name:
         _last_entity_pos = None
-        _last_joint_pos = obs.get("joints", {}) if obs else None
-        return 0.0
+        _last_joint_pos = obs["joints"]
+        return LIVING_PENALTY
 
-    # --- pick the target entity (first one found in target_entities) ---
-    entities = obs.get("entities", {})
-    target_name = None
-    for name in entities:
-        if name in target_entities:
-            target_name = name
-            break
-
-    if target_name is None:
-        # no tracked entity found
-        _last_entity_pos = None
-        _last_joint_pos = obs.get("joints", {})
-        return 0.0
-
-    curr_ent = entities.get(target_name)
-    # If entity pose is missing or malformed, bail
-    if not curr_ent or len(curr_ent) < 3:
-        _last_entity_pos = None
-        _last_joint_pos = obs.get("joints", {})
-        return 0.0
-
-    # Convert to (x,y,z) floats
-    curr_ent = [float(curr_ent[0]), float(curr_ent[1]), float(curr_ent[2])]
+    curr_ent = [float(p) if p is not None else 0.0 for p in obs_entities[target_name][:3]]
     curr_z = curr_ent[2]
 
-    # If this is the first call (no history) — initialize memory and return 0
     if _last_entity_pos is None or _last_joint_pos is None:
-        _last_entity_pos = list(curr_ent)
-        _last_joint_pos = dict(obs.get("joints", {}))
-        return 0.0
+        _last_entity_pos = curr_ent[:]
+        _last_joint_pos = dict(obs["joints"])
+        return 0.0  # No reward on first step
 
-    # --- Joint movement magnitude (normalized) --------------------------------
-    # We want "movement reward" to discourage inaction, **but** we only want it to
-    # matter if the movement actually affects the object. So we 1) compute
-    # normalized joint motion, then 2) scale it by how much the entity moved.
-    curr_joints = obs.get("joints", {})
-    # compute normalized movement: sum over joints of abs(delta)/range, averaged
-    total_norm = 0.0
-    n_joints = 0
-    for idx, (jn, last_val) in enumerate(_last_joint_pos.items()):
-        n_joints += 1
-        curr_val = curr_joints.get(jn)
-        if curr_val is None:
-            # fallback to midpoint if missing and joint_limits provided
-            if joint_limits is not None and idx < len(joint_limits):
-                curr_val = _safe_midpoint(jn, idx, joint_limits)
-            else:
-                curr_val = last_val if last_val is not None else 0.0
-        lo_hi = (None if joint_limits is None or idx >= len(joint_limits) else joint_limits[idx])
-        if lo_hi is not None:
-            lo, hi = lo_hi
-            rng = max(1e-4, hi - lo)
-        else:
-            # generic fallback range
-            rng = 1.0
-        total_norm += abs(curr_val - (last_val if last_val is not None else curr_val)) / rng
+    # Joint movement (encourage large changes, normalized)
+    total_norm_move = sum(
+        abs(float(obs["joints"].get(jn, _safe_midpoint(idx, joint_limits))) -
+            float(_last_joint_pos.get(jn, _safe_midpoint(idx, joint_limits)))) / max(1e-4, hi - lo)
+        for idx, (jn, (lo, hi)) in enumerate(zip(list(obs["joints"].keys()), joint_limits))
+    )
+    movement_norm = clamp(total_norm_move / len(joint_limits), 0.0, 2.0)  # Up to 2x for large moves
+    movement_reward = MOVEMENT_SCALE * movement_norm
 
-    movement_norm = (total_norm / max(1, n_joints))  # average normalized change, ~0..(maybe >1)
-    # clamp to 0..1 for safety
-    if movement_norm < 0.0: movement_norm = 0.0
-    if movement_norm > 1.0: movement_norm = 1.0
+    # Entity displacement and drop
+    ent_disp = euclidean_distance(curr_ent, _last_entity_pos)
+    vert_drop = max(0.0, _last_entity_pos[2] - curr_z)
+    drop_speed = _compute_drop_speed(curr_z, _last_entity_pos[2])
 
-    # --- Entity displacement & vertical drop ----------------------------------
-    ent_disp = _euclid(curr_ent, _last_entity_pos)   # meters
-    vert_drop = max(0.0, _last_entity_pos[2] - curr_z)  # positive if entity moved down
+    # Mobility factor: Scale movement by entity effect (prefer effective large actions)
+    mobility_factor = clamp(0.2 + 0.8 * (ent_disp / max(TOUCH_DISP_THRESH, ent_disp)))
 
-    # --- mobility_factor: scale movement reward by how much the object moved ---
-    # If the object didn't move, movement is less valuable. This prevents the agent
-    # from just flailing to accumulate movement reward without affecting the object.
-    # We keep a small base factor (0.1) so some exploratory motion is still rewarded.
-    mobility_factor = 0.1 + 0.9 * min(1.0, ent_disp / max(1e-6, TOUCH_DISP_THRESH))
+    # Touch/displacement reward (moderate)
+    touch_reward = TOUCH_REWARD if ent_disp >= TOUCH_DISP_THRESH else 0.0
 
-    # --- reward components ----------------------------------------------------
-    movement_reward = W_MOVEMENT * movement_norm * mobility_factor
-    # drop_reward: reward proportional to how much the object dropped this step (clamped)
-    drop_reward = W_DROP * min(1.0, vert_drop / DROP_NORM)
-    # touch_reward: discrete bonus if the object was noticeably displaced (touch/interaction)
-    touch_reward = W_TOUCH if ent_disp >= TOUCH_DISP_THRESH else 0.0
-    # throw_reward: success condition if object hits floor / ground (big reward)
-    if curr_z <= GROUND_Z:
-        # If object is on the ground, give the largest reward. We still add other terms
-        # to keep numeric continuity, but the throw reward dominates.
-        total = W_THROW + movement_reward + drop_reward + touch_reward + STEP_PENALTY
-    else:
-        total = movement_reward + drop_reward + touch_reward + STEP_PENALTY
+    # Drop reward: Proportional to drop + speed bonus
+    drop_reward = DROP_REWARD * clamp(vert_drop / (TABLE_Z - GROUND_Z)) + drop_speed * 1.0
 
-    # clamp (no negative rewards unless STEP_PENALTY negative)
-    if total < 0.0:
-        total = 0.0
+    # Success: On ground, bonus for distance fallen
+    fall_distance = TABLE_Z - curr_z
+    success_bonus = SUCCESS_REWARD if curr_z <= GROUND_Z else 0.0
+    if success_bonus > 0:
+        success_bonus += clamp(fall_distance / (TABLE_Z - GROUND_Z)) * 2.0  # Extra for full fall
 
-    # --- update history for next step and return --------------------------------
-    _last_entity_pos = list(curr_ent)
-    _last_joint_pos = dict(curr_joints)
+    # Total: Movement (scaled), touch, drop, success + living penalty
+    total = (
+        movement_reward * mobility_factor +
+        touch_reward +
+        drop_reward +
+        success_bonus +
+        LIVING_PENALTY
+    )
+    total = clamp(total, 0.0)  # No negatives
+
+    # Update state
+    _last_entity_pos = curr_ent[:]
+    _last_joint_pos = dict(obs["joints"])
 
     return float(total)

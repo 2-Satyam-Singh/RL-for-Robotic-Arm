@@ -1,4 +1,3 @@
-# environment/environment_0_5.py
 """
 Environment wrapper around PandaController.
 Exposes a Gym-like API: reset(), step(action).
@@ -11,8 +10,9 @@ These functions are available:
 
 import time
 import numpy as np
-from controller.panda_controller import PandaController
+from controller.panda_controller import PandaController, JOINTS, LIMITS
 from reward.reward import compute_reward, reset_reward
+from utils.env_utils import normalize_obs, denormalize_action, action_to_dict
 
 
 class PandaEnv:
@@ -35,65 +35,10 @@ class PandaEnv:
         self.max_steps = 200
         self.workspace_range = workspace_range
 
-    def _normalize_obs(self, obs):
-        """
-        Convert dict observation -> flat normalized vector.
-        - Joint angles normalized by joint limits to [-1, 1].
-        - Entity positions normalized by workspace_range to [-1, 1].
-        """
-        # Validate observation
-        for j in self.joints:
-            if j not in obs["joints"] or obs["joints"][j] is None:
-                print(f"[Warning] Joint {j} missing or None in observation, using 0.0")
-                obs["joints"][j] = 0.0
-        for e in self.entities:
-            if e not in obs["entities"] or obs["entities"][e] is None:
-                print(f"[Warning] Entity {e} missing or None in observation, using [0, 0, 0]")
-                obs["entities"][e] = [0.0, 0.0, 0.0]
-
-        # Normalize joints
-        joint_vals = []
-        for (j, (low, high)) in zip(self.joints, self.limits):
-            val = obs["joints"].get(j, 0.0)
-            if high > low:
-                norm_val = 2.0 * (val - low) / (high - low) - 1.0  # scale to [-1, 1]
-            else:
-                norm_val = 0.0
-            joint_vals.append(norm_val)
-
-        # Normalize entities
-        entity_vals = []
-        for e in self.entities:
-            pos = obs["entities"].get(e, [0.0, 0.0, 0.0])
-            entity_vals.extend([max(-1.0, min(1.0, p / self.workspace_range)) for p in pos])
-
-        flat_obs = np.array(joint_vals + entity_vals, dtype=np.float32)
-        return flat_obs
-    
-    def _denormalize_action(self, action):
-        if isinstance(action, dict):
-            return action  # Already raw
-        denorm_vals = []
-        for val, (low, high) in zip(action, self.limits):
-            denorm_vals.append(low + (val + 1.0) * (high - low) / 2.0 if high > low else low)
-        return dict(zip(self.joints, denorm_vals))
-
-    def _action_to_dict(self, action):                      # is this even necessary?
-        """
-        Convert action (array or dict) to dict expected by PandaController.
-        If array, assume same order as self.joints.
-        """
-        if isinstance(action, dict):
-            return {j: action.get(j, 0.0) for j in self.joints}
-        elif isinstance(action, (list, np.ndarray)):
-            if len(action) != len(self.joints):
-                raise ValueError(f"Action array length {len(action)} does not match joints {len(self.joints)}")
-            return dict(zip(self.joints, action))
-        else:
-            raise ValueError(f"Unsupported action type: {type(action)}")
-
     def reset(self):
         """Reset robot + reward, return initial normalized state."""
+        pos = self.ctrl.get_entity_positions()  # Print latest entity positions
+        print(f"[state] Positions: {pos}\n")
         self.ctrl.reset()
         reset_reward()
         time.sleep(self.dt)
@@ -101,8 +46,10 @@ class PandaEnv:
         obs = {
             "joints": self.ctrl.get_joint_states(),
             "entities": self.ctrl.get_entity_positions()
+            # "ee_pose": self.ctrl.get_end_effector_pose()    #Include this in future
+
         }
-        return self._normalize_obs(obs)
+        return normalize_obs(obs, self.joints, self.limits, self.entities, self.workspace_range)
 
     def step(self, action):                                 # The newly introduced end effector pose (position and orientation) also needs to be used for reward calculation, so we need to add it to the observation space
         """
@@ -110,7 +57,7 @@ class PandaEnv:
         Action can be a NumPy array or dict.
         """
         # Convert action to dict for PandaController
-        action_dict = self._action_to_dict(action)
+        action_dict = action_to_dict(action, self.joints)
         self.ctrl.set_joint_positions(action_dict)
         time.sleep(self.dt)
 
@@ -118,8 +65,9 @@ class PandaEnv:
         obs = {
             "joints": self.ctrl.get_joint_states(),
             "entities": self.ctrl.get_entity_positions()
+            # "ee_pose": self.ctrl.get_end_effector_pose()    #Include this in future, but it would need major changes
         }
-        state = self._normalize_obs(obs)
+        state = normalize_obs(obs, self.joints, self.limits, self.entities, self.workspace_range)
 
         # Reward + termination
         reward = compute_reward(obs, self.entities, self.limits)

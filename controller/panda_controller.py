@@ -17,6 +17,11 @@ from gz.msgs import model_pb2, pose_pb2
 import gz.msgs.pose_v_pb2 as pose_v_pb2
 import time
 
+JOINTS = [f"panda_joint{i}" for i in range(1, 8)] + ["panda_finger_joint1", "panda_finger_joint2"]
+LIMITS = [(-2.90, 2.90), (-1.76, 1.76), (-2.90, 2.90), (-3.07, -0.07), (-2.90, 2.90), (-0.02, 3.75), (-2.90, 2.90), (0, 0.04), (0, 0.04)]
+
+DECIMAL_PLACES = 2
+
 class PandaController:
     ENTITIES = {
         "Transformers_Age_of_Extinction_Mega_1Step_Bumblebee_Figure",
@@ -62,7 +67,7 @@ class PandaController:
             return joint_states
         for joint in self.latest_joint_msg.joint:
             if joint.name in joint_states and joint.axis1 and joint.axis1.position is not None:
-                joint_states[joint.name] = joint.axis1.position
+                joint_states[joint.name] = round(joint.axis1.position, DECIMAL_PLACES)
             elif joint.name in joint_states:
                 print(f"[get_joint_states] No position data for {joint.name}")
         return joint_states
@@ -88,7 +93,7 @@ class PandaController:
         for pose in self.latest_pose_msg.pose:
             if pose.name in self.ENTITIES:
                 p = pose.position
-                entities[pose.name] = [p.x, p.y, p.z]
+                entities[pose.name] = [round(p.x, DECIMAL_PLACES), round(p.y, DECIMAL_PLACES), round(p.z, DECIMAL_PLACES)]
         return entities
         
     def set_entity_positions(self, name, pos, ori=None):
@@ -121,15 +126,15 @@ class PandaController:
             return None
 
         pos = [
-            ee_pose.position.x,
-            ee_pose.position.y,
-            ee_pose.position.z
+            round(ee_pose.position.x, DECIMAL_PLACES),
+            round(ee_pose.position.y, DECIMAL_PLACES),
+            round(ee_pose.position.z, DECIMAL_PLACES)
         ]
         ori = [
-            ee_pose.orientation.x,
-            ee_pose.orientation.y,
-            ee_pose.orientation.z,
-            ee_pose.orientation.w
+            round(ee_pose.orientation.x, DECIMAL_PLACES),
+            round(ee_pose.orientation.y, DECIMAL_PLACES),
+            round(ee_pose.orientation.z, DECIMAL_PLACES),
+            round(ee_pose.orientation.w, DECIMAL_PLACES)
         ]
         return {"position": pos, "orientation": ori}
     

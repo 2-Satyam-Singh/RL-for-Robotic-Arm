@@ -27,6 +27,8 @@ random.seed(SEED)
 np.random.seed(SEED)
 torch.manual_seed(SEED)
 
+DECIMAL_PLACES = 1
+
 
 class ActorCritic(nn.Module):
     """Actor-Critic network with Gaussian policy for continuous actions."""
@@ -155,6 +157,7 @@ class PPOAgent(BaseAgent):
         with torch.no_grad():
             action_t, log_prob_t, value_t = self.ac.act(obs_t)
         action = action_t.squeeze(0).cpu().numpy()
+        action = np.round(action, decimals=DECIMAL_PLACES)
         log_prob = float(log_prob_t.item())
         value = float(value_t.item())
         self.last = (obs, action, log_prob, value)

@@ -7,13 +7,15 @@ Updating Entities Position
 """
 import random
 import time
-from controller.panda_controller import PandaController
+from controller.panda_controller import PandaController, JOINTS, LIMITS
 
 random.seed(42)
 
-JOINTS = [f"panda_joint{i}" for i in range(1, 8)] + ["panda_finger_joint1", "panda_finger_joint2"]
-LIMITS = [(-2.9, 2.9), (-1.76, 1.76), (-2.9, 2.9), (-3.07, -0.07), (-2.9, 2.9), (-0.02, 3.75), (-2.9, 2.9), (0, 0.04), (0, 0.04)]
-LOOP_FREQUENCY = 10
+# ──────── Removed finger joints for training (only 7 arm joints now) ────────
+JOINTS = JOINTS[:-2]      # panda_joint1..7 only
+LIMITS = LIMITS[:-2]
+
+LOOP_FREQUENCY = 1
 
 def main():
     ctrl = PandaController(JOINTS)
@@ -47,21 +49,18 @@ def main():
 
 # >---> Previous State
         js = ctrl.get_joint_states()  # Get joint states
-        # Round joint states to 6 decimal places for printing
-        # js_rounded = {k: round(v, 6) if v is not None else None for k, v in js.items()}
-        # print(f"[state] Joints: {js_rounded}")  # Print rounded joint states
-        print()
+        print(f"[state] Joints: {js}")  # Print old joint states
 
-        # pos = ctrl.get_entity_positions()  # Print latest entity positions
-        # print(f"[state] Positions: {pos}\n")
+        pos = ctrl.get_entity_positions()  # Print latest entity positions
+        print(f"[state] Positions: {pos}\n")
 
 
 # >---> Action Performed
-        # pos = {j: random.uniform(*lim) for j, lim in zip(JOINTS, LIMITS)}  # Random actions
+        pos = {j: random.uniform(*lim) for j, lim in zip(JOINTS, LIMITS)}  # Random actions
         # OR
         # pos = {j: js[j] + 1 if js[j] is not None else random.uniform(*lim) for j, lim in zip(JOINTS, LIMITS)}  # Handle None safely if uncommented
 
-        # ctrl.set_joint_positions(pos)
+        ctrl.set_joint_positions(pos)
         time.sleep(LOOP_FREQUENCY)       # Need this time to move the joints
 
 
@@ -71,9 +70,9 @@ def main():
         ee_pose = ctrl.get_end_effector_pose()
         if ee_pose:
             # Round EE pose to 6 decimal places for printing
-            pos_rounded = [round(x, 6) for x in ee_pose['position']]
-            ori_rounded = [round(x, 6) for x in ee_pose['orientation']]
-            print(f"[state] EE Pose: Pos={pos_rounded}, Ori (quaternion)= {ori_rounded}")  # Full quaternion, rounded
+            pos = ee_pose['position']
+            ori = ee_pose['orientation']
+            print(f"[state] EE Pose: Pos={pos}, Ori (quaternion)= {ori}")  # Full quaternion
         else:
             print("[state] EE Pose: No data yet")
 

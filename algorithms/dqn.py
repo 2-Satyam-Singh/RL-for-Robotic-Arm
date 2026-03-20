@@ -1,8 +1,7 @@
-# algorithms/dqn_0_5.py
+# algorithms/dqn.py
 """
-Optimized DQN (PyTorch) — discrete actions for joint adjustments.
-Compatible with environment_0_5 (normalized obs arrays, array actions).
-Saves to models/dqn_models/<name>.pth via BaseAgent.
+Optimized DQN (PyTorch) — Discrete actions for a continuous environment.
+Works smoothly by taking discrete steps in normalized observation space.
 """
 
 import os
@@ -11,19 +10,28 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import logging
 
 from algorithms.base import BaseAgent
 
-logging.basicConfig(level=logging.WARNING, format="%(asctime)s [%(levelname)s] %(message)s")
-
-random.seed(42)
-np.random.seed(42)
-torch.manual_seed(42)
+# ==========================================
+# HYPERPARAMETERS
+# ==========================================
+DEFAULT_LR = 1e-3
+DEFAULT_GAMMA = 0.99
+DEFAULT_BATCH_SIZE = 64
+DEFAULT_BUFFER_SIZE = 100_000
+DEFAULT_TARGET_UPDATE = 500
+DEFAULT_MIN_BUFFER = 1000
+DEFAULT_EPSILON_START = 1.0
+DEFAULT_EPSILON_END = 0.05
+DEFAULT_EPSILON_DECAY = 20_000
+DEFAULT_HIDDEN = (128, 128)
+STEP_SIZE = 0.5  # How much to move a joint in normalized space (-1 to 1) per step
 
 
 class MLP(nn.Module):
-    def __init__(self, inp_dim, out_dim, hidden=(128, 128)):
+    """Simple Neural Network for Q-Value approximation."""
+    def __init__(self, inp_dim, out_dim, hidden=DEFAULT_HIDDEN):
         super().__init__()
         layers = []
         last = inp_dim
@@ -37,39 +45,35 @@ class MLP(nn.Module):
         return self.net(x)
 
 
-class NumpyReplay:
-    def __init__(self, obs_dim, act_dim, size=100_000):
+class ReplayBuffer:
+    """Clean, array-based replay buffer for fast sampling."""
+    def __init__(self, obs_dim, size):
         self.size = int(size)
-        self.obs_dim = obs_dim
-        self.act_dim = act_dim
-        self.buffer = {
-            "s": np.zeros((size, obs_dim), dtype=np.float32),
-            "s2": np.zeros((size, obs_dim), dtype=np.float32),
-            "a": np.zeros(size, dtype=np.int64),
-            "r": np.zeros(size, dtype=np.float32),
-            "d": np.zeros(size, dtype=np.float32),
-        }
-        self.ptr = 0
-        self.len = 0
+        self.obs_buf = np.zeros((self.size, obs_dim), dtype=np.float32)
+        self.next_obs_buf = np.zeros((self.size, obs_dim), dtype=np.float32)
+        self.acts_buf = np.zeros(self.size, dtype=np.int64)
+        self.rews_buf = np.zeros(self.size, dtype=np.float32)
+        self.done_buf = np.zeros(self.size, dtype=np.float32)
+        self.ptr, self.len = 0, 0
 
-    def push(self, s, a, r, s2, done):
-        i = self.ptr % self.size
-        self.buffer["s"][i] = s
-        self.buffer["s2"][i] = s2
-        self.buffer["a"][i] = a
-        self.buffer["r"][i] = r
-        self.buffer["d"][i] = float(done)
-        self.ptr += 1
+    def push(self, obs, act, rew, next_obs, done):
+        self.obs_buf[self.ptr] = obs
+        self.next_obs_buf[self.ptr] = next_obs
+        self.acts_buf[self.ptr] = act
+        self.rews_buf[self.ptr] = rew
+        self.done_buf[self.ptr] = float(done)
+        
+        self.ptr = (self.ptr + 1) % self.size
         self.len = min(self.len + 1, self.size)
 
-    def sample(self, batch):
-        idx = np.random.randint(0, self.len, size=batch)
+    def sample(self, batch_size):
+        idxs = np.random.randint(0, self.len, size=batch_size)
         return (
-            self.buffer["s"][idx],
-            self.buffer["a"][idx],
-            self.buffer["r"][idx],
-            self.buffer["s2"][idx],
-            self.buffer["d"][idx],
+            self.obs_buf[idxs],
+            self.acts_buf[idxs],
+            self.rews_buf[idxs],
+            self.next_obs_buf[idxs],
+            self.done_buf[idxs]
         )
 
     def __len__(self):
@@ -77,147 +81,112 @@ class NumpyReplay:
 
 
 class DQNAgent(BaseAgent):
-    def __init__(
-        self,
-        env,
-        lr=1e-3,
-        gamma=0.99,
-        batch_size=64,
-        buffer_size=100_000,
-        epsilon_start=1.0,
-        epsilon_end=0.05,
-        epsilon_decay_steps=20000,
-        target_update_freq=500,
-        step_frac=0.08,
-        min_buffer=500,
-        hidden=(128, 128),
-        device=None,
-    ):
+    def __init__(self, env, device=None):
         super().__init__(env, algo_name="dqn")
-        self.joint_names = list(env.joints)
-        self.joint_limits = env.limits
+        self.n_joints = len(env.joints)
         self.entity_names = sorted(list(env.entities)) if env.entities else []
-        self.n_joints = len(self.joint_names)
+        self.obs_dim = self.n_joints + 3 * len(self.entity_names)
+        
+        # 3 primitive actions per joint: 0 (Decrease), 1 (Stay), 2 (Increase)
         self.n_primitives = 3
         self.n_actions = self.n_joints * self.n_primitives
-        self.obs_dim = self.n_joints + 3 * len(self.entity_names)
-
-        self.gamma = gamma
-        self.batch_size = batch_size
-        self.target_update_freq = target_update_freq
-        self.step_frac = step_frac
-        self.min_buffer = min_buffer
 
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
 
-        # Precompute deltas
-        self.deltas = np.array([(hi - lo) * self.step_frac for (lo, hi) in self.joint_limits], dtype=np.float32)
-
         # Networks
-        self.q = MLP(self.obs_dim, self.n_actions, hidden).to(self.device)
-        self.target = MLP(self.obs_dim, self.n_actions, hidden).to(self.device)
-        self.target.load_state_dict(self.q.state_dict())
-        self.target.eval()
+        self.q_net = MLP(self.obs_dim, self.n_actions, DEFAULT_HIDDEN).to(self.device)
+        self.target_net = MLP(self.obs_dim, self.n_actions, DEFAULT_HIDDEN).to(self.device)
+        self.target_net.load_state_dict(self.q_net.state_dict())
+        self.target_net.eval()
 
-        self.opt = optim.Adam(self.q.parameters(), lr=lr)
+        self.opt = optim.Adam(self.q_net.parameters(), lr=DEFAULT_LR)
         self.loss_fn = nn.SmoothL1Loss()
+        self.buffer = ReplayBuffer(self.obs_dim, DEFAULT_BUFFER_SIZE)
 
-        self.buffer = NumpyReplay(self.obs_dim, self.n_actions, buffer_size)
-
-        # Epsilon
-        self.epsilon = epsilon_start
-        self.epsilon_end = epsilon_end
-        self.epsilon_decay = max(1, epsilon_decay_steps)
-        self.epsilon_step = (epsilon_start - epsilon_end) / self.epsilon_decay
-
+        # Exploration params
+        self.epsilon = DEFAULT_EPSILON_START
+        self.epsilon_step = (DEFAULT_EPSILON_START - DEFAULT_EPSILON_END) / DEFAULT_EPSILON_DECAY
+        
         self.train_steps = 0
-
-    def _action_idx_to_array(self, idx, current_joints):
-        """Convert action index to array of joint positions."""
-        ji = idx // self.n_primitives
-        prim = idx % self.n_primitives
-        curr = np.array([current_joints.get(jn, 0.0) for jn in self.joint_names], dtype=np.float32)
-        delta = self.deltas[ji]
-        if prim == 0:
-            newv = curr[ji] - delta
-        elif prim == 1:
-            newv = curr[ji]
-        else:
-            newv = curr[ji] + delta
-        lo, hi = self.joint_limits[ji]
-        newv = max(lo, min(hi, newv))
-        curr[ji] = newv
-        return curr
+        self._last_action_idx = 0 # State tracker to prevent reverse-engineering math
 
     def select_action(self, obs):
-        """Select action (array of joint positions)."""
+        """Picks a discrete index, but returns a continuous array for the environment."""
+        # 1. Epsilon-Greedy choice for DISCRETE action index
         if random.random() < self.epsilon:
             idx = random.randrange(self.n_actions)
         else:
             with torch.no_grad():
-                qv = self.q(torch.tensor(obs, device=self.device).unsqueeze(0))
-                idx = int(torch.argmax(qv).item())
-        if self.epsilon > self.epsilon_end:
-            self.epsilon = max(self.epsilon_end, self.epsilon - self.epsilon_step)
+                obs_t = torch.tensor(obs, dtype=torch.float32, device=self.device).unsqueeze(0)
+                idx = int(torch.argmax(self.q_net(obs_t)).item())
+
+        # Decay epsilon
+        if self.epsilon > DEFAULT_EPSILON_END:
+            self.epsilon = max(DEFAULT_EPSILON_END, self.epsilon - self.epsilon_step)
+            
+        # Save the index internally so we don't have to guess it later!
         self._last_action_idx = idx
-        # Convert to array using denormalized current joints (from raw_obs if needed, but assume obs is normalized; for action, need raw)
-        # Note: To get raw joints, we'd need denormalization, but since train loop has info["raw_obs"], but here we don't.
-        # Approximation: Denormalize obs joints part
-        joint_vals = obs[:self.n_joints]
-        current_joints = {jn: low + (val + 1.0) * (high - low) / 2.0 if high > low else low
-                          for jn, val, (low, high) in zip(self.joint_names, joint_vals, self.joint_limits)}
-        return self._action_idx_to_array(idx, current_joints)
+
+        # 2. Convert index to a continuous target array
+        joint_idx = idx // self.n_primitives
+        action_type = idx % self.n_primitives
+
+        # Extract current normalized joints from the observation
+        current_joints = obs[:self.n_joints].copy()
+
+        # Apply the step directly in normalized space (-1.0 to 1.0)
+        if action_type == 0:
+            current_joints[joint_idx] -= STEP_SIZE
+        elif action_type == 2:
+            current_joints[joint_idx] += STEP_SIZE
+            
+        # Ensure we don't request a position outside the robot's physical limits
+        return np.clip(current_joints, -1.0, 1.0)
 
     def store_transition(self, obs, action, reward, next_obs, done):
-        s = obs  # Normalized array
-        s2 = next_obs
-        # Convert action array back to idx for storage (discrete)
-        diffs = np.abs(action - [current_joints.get(jn, 0.0) for jn in self.joint_names])  # Approximate from action
-        ji = np.argmax(diffs)
-        delta = self.deltas[ji]
-        if action[ji] <= action[ji] - 0.5 * delta:  # Use original curr from select, but approx
-            prim = 0
-        elif action[ji] >= action[ji] + 0.5 * delta:
-            prim = 2
-        else:
-            prim = 1
-        idx = ji * self.n_primitives + prim
-        self.buffer.push(s, idx, float(reward), s2, float(done))
+        """Stores the experience using our saved discrete index, ignoring the continuous action array."""
+        self.buffer.push(obs, self._last_action_idx, float(reward), next_obs, done)
 
     def learn(self):
-        if len(self.buffer) < max(self.min_buffer, self.batch_size):
+        """Standard Double-DQN learning step."""
+        if len(self.buffer) < DEFAULT_MIN_BUFFER:
             return
-        s, a, r, s2, d = self.buffer.sample(self.batch_size)
-        s = torch.tensor(s, device=self.device)
-        a = torch.tensor(a, device=self.device)
-        r = torch.tensor(r, device=self.device)
-        s2 = torch.tensor(s2, device=self.device)
-        d = torch.tensor(d, device=self.device)
 
-        q_vals = self.q(s)  # (B, A)
-        q_taken = q_vals.gather(1, a.unsqueeze(1)).squeeze(1)
+        s, a, r, s2, d = self.buffer.sample(DEFAULT_BATCH_SIZE)
+        
+        s_t = torch.tensor(s, device=self.device)
+        a_t = torch.tensor(a, device=self.device).unsqueeze(1) # For gather
+        r_t = torch.tensor(r, device=self.device)
+        s2_t = torch.tensor(s2, device=self.device)
+        d_t = torch.tensor(d, device=self.device)
 
-        # Double DQN
-        next_online = self.q(s2).argmax(1)
-        next_target = self.target(s2).gather(1, next_online.unsqueeze(1)).squeeze(1)
-        target = r + (1.0 - d) * self.gamma * next_target
+        # Current Q values
+        q_taken = self.q_net(s_t).gather(1, a_t).squeeze(1)
 
-        loss = self.loss_fn(q_taken, target.detach())
+        # Double DQN target calculation
+        with torch.no_grad():
+            next_online_actions = self.q_net(s2_t).argmax(1, keepdim=True)
+            next_target_q = self.target_net(s2_t).gather(1, next_online_actions).squeeze(1)
+            target = r_t + (1.0 - d_t) * DEFAULT_GAMMA * next_target_q
+
+        loss = self.loss_fn(q_taken, target)
 
         self.opt.zero_grad()
         loss.backward()
         self.opt.step()
 
         self.train_steps += 1
-        if self.train_steps % self.target_update_freq == 0:
-            self.target.load_state_dict(self.q.state_dict())
+        
+        # Sync target network
+        if self.train_steps % DEFAULT_TARGET_UPDATE == 0:
+            self.target_net.load_state_dict(self.q_net.state_dict())
 
     def save(self, name="dqn"):
         p = os.path.join(self.model_dir, f"{name}.pth")
-        torch.save(self.q.state_dict(), p)
+        torch.save(self.q_net.state_dict(), p)
 
     def load(self, name="dqn"):
         p = os.path.join(self.model_dir, f"{name}.pth")
         if os.path.exists(p):
-            self.q.load_state_dict(torch.load(p, map_location=self.device))
-            self.target.load_state_dict(self.q.state_dict())
+            self.q_net.load_state_dict(torch.load(p, map_location=self.device))
+            self.target_net.load_state_dict(self.q_net.state_dict())

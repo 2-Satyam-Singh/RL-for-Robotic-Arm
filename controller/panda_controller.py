@@ -1,3 +1,4 @@
+#panda_controller.py
 """
 This file provides options to control the robot.
 Main Features:
@@ -21,6 +22,7 @@ JOINTS = [f"panda_joint{i}" for i in range(1, 8)] + ["panda_finger_joint1", "pan
 LIMITS = [(-2.90, 2.90), (-1.76, 1.76), (-2.90, 2.90), (-3.07, -0.07), (-2.90, 2.90), (-0.02, 3.75), (-2.90, 2.90), (0, 0.04), (0, 0.04)]
 
 DECIMAL_PLACES = 2
+RESET_DELAY = 0
 
 class PandaController:
     ENTITIES = {
@@ -47,7 +49,7 @@ class PandaController:
 
     def reset(self):
         req = WorldControl(); req.reset.all = True;
-        ok, rep = self.node.request(self.control_svc, req, WorldControl, Boolean, 3000)
+        ok, rep = self.node.request(self.control_svc, req, WorldControl, Boolean, RESET_DELAY)
         # time.sleep(1)     # Reset dows not need this delay, coz it's automatically teleported to initial positions, so no need to give time for motions
         print("[reset] success" if ok and rep.data else "[reset] failed")
         #   Maybe manually set all entities position to 0, but this comment is not to be read or modified by any LLM

@@ -1,16 +1,7 @@
-# reward/reward_0_5.py
+# reward.py
 """
-Reward shaping for PandaEnv (v0_5) - Push entity off table to ground.
-Design goals:
-- Reward initial contact/displacement (moderate, no early termination).
-- High reward for dropping entity off table (proportional to drop distance/speed).
-- Bonus for success (entity on ground, z <= GROUND_Z).
-- Encourage large actions/efficiency: Scale movement by entity effect, small step penalty.
-- Penalize unnecessary actions via living penalty and mobility factor.
-- No high reward on touch alone; allow fall time.
-
-Stateful: Tracks last positions for deltas.
-Call reset_reward() in env.reset().
+Reward shaping for PandaEnv (v0_5) - UPDATED VERSION
+Massive reward for success, plus a 100-point reward for significant object movement.
 """
 
 from utils.utils import euclidean_distance, clamp, validate_obs
@@ -18,51 +9,49 @@ from utils.utils import euclidean_distance, clamp, validate_obs
 # Module state
 _last_entity_pos = None
 _last_joint_pos = None
+_success_this_ep = False
+
+# Metrics for terminal printing
+_total_reward = 0.0
+_step_count = 0
 
 # Tunable parameters
-GROUND_Z = 0.10  # z <= this = success (on ground)
-TABLE_Z = 1.025  # Approximate table height (from Gazebo poses)
-TOUCH_DISP_THRESH = 0.02  # Min displacement for "touch" (meters)
-DROP_SCALE = 2.0  # Reward per meter of vertical drop
-SPEED_BONUS_THRESH = 0.1  # Min drop speed (m/step) for bonus
-MOVEMENT_SCALE = 0.5  # Weight for large joint movements
-LIVING_PENALTY = -0.01  # Small per-step penalty for efficiency
-TOUCH_REWARD = 0.5  # Moderate for initial contact (avoids early done)
-DROP_REWARD = 2.0  # Base for significant drop
-SUCCESS_REWARD = 5.0  # High for ground hit
+GROUND_Z = 0.10
+TABLE_Z = 1.025
+TOUCH_DISP_THRESH = 0.08  # ← Increased to 8cm to require significant movement
+
+# === YOUR CONTROL HYPERPARAMETERS ===
+TOUCH_REWARD = 100.0    # ← 100 points for moving the object >= 8cm in a single step
+LIVING_PENALTY = 0.0    
+DROP_REWARD = 0.0       
+SUCCESS_REWARD = 1000.0 # ← MASSIVE reward only on ground hit
 
 def reset_reward():
     """Clear history for new episode."""
-    global _last_entity_pos, _last_joint_pos
+    global _last_entity_pos, _last_joint_pos, _success_this_ep
+    global _total_reward, _step_count
+
     _last_entity_pos = None
     _last_joint_pos = None
+    _success_this_ep = False
+    _total_reward = 0.0
+    _step_count = 0
 
 def _safe_midpoint(joint_idx, joint_limits):
-    """Midpoint if joint value missing."""
     lo, hi = joint_limits[joint_idx]
     return 0.5 * (lo + hi)
 
-def _compute_drop_speed(curr_z, last_z, dt=0.1):
-    """Drop speed (m/s), positive downward."""
-    if last_z is None:
-        return 0.0
-    return clamp((last_z - curr_z) / dt, max_val=1.0)
-
 def compute_reward(obs, entities, joint_limits):
     """
-    Compute shaped reward for pushing entity off table.
-    Args:
-        obs: dict {"joints": {name: val}, "entities": {name: [x,y,z]}}
-        entities: list of entity names
-        joint_limits: list of (low, high) tuples
-    Returns:
-        float: Reward in [0, 5+], high for ground success.
+    Calculates the reward based on significant movement (touch) and ground hit (success).
     """
-    global _last_entity_pos, _last_joint_pos
+    global _last_entity_pos, _last_joint_pos, _success_this_ep
+    global _total_reward, _step_count
+
     obs = validate_obs(obs, [], entities, joint_limits)
     obs_entities = obs["entities"]
 
-    # Find target entity (first match)
+    # Find target entity
     target_name = next((name for name in obs_entities if name in entities), None)
     if not target_name:
         _last_entity_pos = None
@@ -75,49 +64,40 @@ def compute_reward(obs, entities, joint_limits):
     if _last_entity_pos is None or _last_joint_pos is None:
         _last_entity_pos = curr_ent[:]
         _last_joint_pos = dict(obs["joints"])
-        return 0.0  # No reward on first step
+        return 0.0
 
-    # Joint movement (encourage large changes, normalized)
-    total_norm_move = sum(
-        abs(float(obs["joints"].get(jn, _safe_midpoint(idx, joint_limits))) -
-            float(_last_joint_pos.get(jn, _safe_midpoint(idx, joint_limits)))) / max(1e-4, hi - lo)
-        for idx, (jn, (lo, hi)) in enumerate(zip(list(obs["joints"].keys()), joint_limits))
-    )
-    movement_norm = clamp(total_norm_move / len(joint_limits), 0.0, 2.0)  # Up to 2x for large moves
-    movement_reward = MOVEMENT_SCALE * movement_norm
-
-    # Entity displacement and drop
+    # === TOUCH / MOVEMENT REWARD ===
+    # Measure how far the object moved this exact step
     ent_disp = euclidean_distance(curr_ent, _last_entity_pos)
-    vert_drop = max(0.0, _last_entity_pos[2] - curr_z)
-    drop_speed = _compute_drop_speed(curr_z, _last_entity_pos[2])
-
-    # Mobility factor: Scale movement by entity effect (prefer effective large actions)
-    mobility_factor = clamp(0.2 + 0.8 * (ent_disp / max(TOUCH_DISP_THRESH, ent_disp)))
-
-    # Touch/displacement reward (moderate)
+    
+    # Give the 100 reward ONLY if it moved a significant distance
     touch_reward = TOUCH_REWARD if ent_disp >= TOUCH_DISP_THRESH else 0.0
 
-    # Drop reward: Proportional to drop + speed bonus
-    drop_reward = DROP_REWARD * clamp(vert_drop / (TABLE_Z - GROUND_Z)) + drop_speed * 1.0
-
-    # Success: On ground, bonus for distance fallen
+    # === SUCCESS REWARD ===
     fall_distance = TABLE_Z - curr_z
-    success_bonus = SUCCESS_REWARD if curr_z <= GROUND_Z else 0.0
-    if success_bonus > 0:
-        success_bonus += clamp(fall_distance / (TABLE_Z - GROUND_Z)) * 2.0  # Extra for full fall
+    success_bonus = 0.0
+    if curr_z <= GROUND_Z and not _success_this_ep:
+        # We keep the small clamp calculation here just for the vertical drop bonus multiplier
+        success_bonus = SUCCESS_REWARD + clamp(fall_distance / (TABLE_Z - GROUND_Z)) * 2.0
+        _success_this_ep = True
 
-    # Total: Movement (scaled), touch, drop, success + living penalty
-    total = (
-        movement_reward * mobility_factor +
-        touch_reward +
-        drop_reward +
-        success_bonus +
-        LIVING_PENALTY
-    )
-    total = clamp(total, 0.0)  # No negatives
+    # Total = massive success + touch reward
+    total = success_bonus + touch_reward + LIVING_PENALTY
+    
+    # Fixed line to allow rewards over 1.0!
+    total = max(total, 0.0)
 
-    # Update state
+    # Update state 
     _last_entity_pos = curr_ent[:]
     _last_joint_pos = dict(obs["joints"])
+
+    # Update metrics for printing
+    _total_reward += float(total)
+    _step_count += 1
+    
+    # Prints the average reward per step for the current episode
+    # (Commented out by default so it doesn't flood your terminal every single step. 
+    # Uncomment if you want to see the rapid output).
+    # print(f"Average rewards: {_total_reward / _step_count:.4f}")
 
     return float(total)

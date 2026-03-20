@@ -1,3 +1,4 @@
+#environment.py
 """
 Environment wrapper around PandaController.
 Exposes a Gym-like API: reset(), step(action).
@@ -16,7 +17,7 @@ from utils.env_utils import normalize_obs, denormalize_action, action_to_dict
 
 
 class PandaEnv:
-    def __init__(self, joints, limits, entities, loop_hz=10, workspace_range=0.85):
+    def __init__(self, joints, limits, entities, loop_hz=10, workspace_range=0.85, max_steps=100):
         """
         Args:
             joints: list of joint names
@@ -32,22 +33,25 @@ class PandaEnv:
         self.ctrl.start_pose_monitoring()
         self.dt = 1.0 / loop_hz
         self.step_count = 0
-        self.max_steps = 200
+        self.max_steps = max_steps
         self.workspace_range = workspace_range
 
     def reset(self):
         """Reset robot + reward, return initial normalized state."""
-        pos = self.ctrl.get_entity_positions()  # Print latest entity positions
-        print(f"[state] Positions: {pos}\n")
+        # pos = self.ctrl.get_entity_positions()  # Print latest entity positions
+        # print(f"[state] Positions: {pos}\n")
         self.ctrl.reset()
+
+        # time.sleep(0.4)
         reset_reward()
-        time.sleep(self.dt)
+
+        # time.sleep(self.dt)
         self.step_count = 0
+
         obs = {
             "joints": self.ctrl.get_joint_states(),
-            "entities": self.ctrl.get_entity_positions()
-            # "ee_pose": self.ctrl.get_end_effector_pose()    #Include this in future
-
+            "entities": self.ctrl.get_entity_positions(),
+            "ee_pose": self.ctrl.get_end_effector_pose()    #Include this in future
         }
         return normalize_obs(obs, self.joints, self.limits, self.entities, self.workspace_range)
 
@@ -56,6 +60,8 @@ class PandaEnv:
         Apply action, step sim, return (state, reward, done, info).
         Action can be a NumPy array or dict.
         """
+        if not isinstance(action, dict):
+            action = denormalize_action(action, self.joints, self.limits)  # <--- add this
         # Convert action to dict for PandaController
         action_dict = action_to_dict(action, self.joints)
         self.ctrl.set_joint_positions(action_dict)
@@ -70,11 +76,14 @@ class PandaEnv:
         state = normalize_obs(obs, self.joints, self.limits, self.entities, self.workspace_range)
 
         # Reward + termination
-        reward = compute_reward(obs, self.entities, self.limits)
+        reward = compute_reward(obs, self.entities, self.limits)   # ← still same line
+
         self.step_count += 1
-        done = self.step_count >= self.max_steps or reward > 0.9
+        
+        # ←←← REPLACE THE done line with:
+        target_name = next((name for name in obs["entities"] if name in self.entities), None)
+        curr_z = obs["entities"][target_name][2] if target_name and len(obs["entities"][target_name]) > 2 else 999
+        done = self.step_count >= self.max_steps or curr_z <= 0.10   # GROUND_Z hard-coded for zero extra import
 
-        # Include raw observation in info for debugging
         info = {"raw_obs": obs}
-
         return state, reward, done, info

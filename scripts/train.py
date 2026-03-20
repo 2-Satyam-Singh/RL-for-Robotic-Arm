@@ -1,3 +1,4 @@
+# train.py
 """
 Training loop using PandaEnv.
 Logger moved to utils/logger.py for cleaner code and better plotting. Each episode's data is logged to a CSV file and plotted in real-time.
@@ -21,16 +22,24 @@ ENTITIES = {
     "Transformers_Age_of_Extinction_Mega_1Step_Bumblebee_Figure"
 }
 WORKSPACE_RANGE = 0.85  # Default workspace range in meters
+MAX_STEPS = 25
+LOOP_HZ = 1
+SAVE_INTERVAL = 1000
+
+ALGO = "ppo"  # "dqn" or "ppo"
+
+EPISODES = 100000
+
 
 def make_algo(name, env):
     return {"dqn": DQNAgent, "ppo": PPOAgent}[name.lower()](env)
 
 def main():
-    env = PandaEnv(JOINTS, LIMITS, ENTITIES, workspace_range=WORKSPACE_RANGE)
-    algo = make_algo("ppo", env)  # "dqn" or "ppo"
-    log = Logger(JOINTS, LIMITS, ENTITIES, plot_every=1, workspace_range=WORKSPACE_RANGE)
+    env = PandaEnv(JOINTS, LIMITS, ENTITIES, workspace_range=WORKSPACE_RANGE, max_steps=MAX_STEPS)
+    algo = make_algo(ALGO, env)  # "dqn" or "ppo"
+    log = Logger(JOINTS, LIMITS, ENTITIES, plot_every=1, workspace_range=WORKSPACE_RANGE, algo_name=ALGO.capitalize(), env_name="7 DOF arm")
 
-    episodes = 100000
+    episodes = EPISODES
     for ep in range(episodes):
         obs = env.reset()
         done = False
@@ -46,7 +55,7 @@ def main():
             algo.store_transition(obs, action, reward, next_obs, done)
             algo.learn()  # each algo internally decides when to update
 
-            if (ep + 1) % 100 == 0:
+            if (ep + 1) % SAVE_INTERVAL == 0:
                 algo.save(f"episode_{ep+1}")
 
             flat = log.flatten_state_action(obs, action, JOINTS, ENTITIES)

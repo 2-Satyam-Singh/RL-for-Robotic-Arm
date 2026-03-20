@@ -1,4 +1,4 @@
-# algorithms/ppo_0_5.py
+# ppo.py
 """
 PPOAgent (PyTorch) — on-policy, compatible with environment_0_5.py.
 Works with normalized observation arrays and outputs action arrays.
@@ -21,24 +21,44 @@ import torch.optim as optim
 
 from algorithms.base import BaseAgent
 
-# Set random seed for reproducibility
-SEED = 99
-random.seed(SEED)
-np.random.seed(SEED)
-torch.manual_seed(SEED)
+# =============================================
+# HYPERPARAMETERS (moved to top for easy tuning)
+# =============================================
+# These are the exact defaults you had.
+# Keep them exactly as-is — they are already good for your small env
+# (obs_dim ≈ 10, act_dim = 7, sparse reward).
+#
+# Recommended values (do NOT change unless you have a reason):
+#   hidden=(128, 128)          ← perfect size for this problem
+#   rollout_steps=2048         ← keep (updates every ~10-20 episodes)
+#   minibatch=64               ← keep
+#   epochs=8                   ← keep
+#   lr=3e-4                    ← standard for PPO continuous
+#   gamma=0.99, lam=0.95       ← keep
+#   clip_eps=0.2               ← keep
+#   entropy_coef=0.01          ← keep (sparse reward works well with this)
+#   value_loss_coef=0.5        ← keep
+#
+# If training feels slow later, you can lower rollout_steps to 1024.
+# Do NOT change hidden layers or buffer size unless you add more entities.
+
+DEFAULT_LR = 3e-4
+DEFAULT_GAMMA = 0.99
+DEFAULT_LAM = 0.95
+DEFAULT_CLIP_EPS = 0.2
+DEFAULT_EPOCHS = 8
+DEFAULT_MINIBATCH = 64
+DEFAULT_ROLLOUT_STEPS = 2048
+DEFAULT_HIDDEN = (128, 128)
+DEFAULT_VALUE_LOSS_COEF = 0.5
+DEFAULT_ENTROPY_COEF = 0.01
 
 DECIMAL_PLACES = 1
 
 
 class ActorCritic(nn.Module):
     """Actor-Critic network with Gaussian policy for continuous actions."""
-    def __init__(self, obs_dim, act_dim, hidden=(128, 128)):
-        """
-        Args:
-            obs_dim (int): Observation dimension (joints + 3 * entities).
-            act_dim (int): Action dimension (number of joints).
-            hidden (tuple): Hidden layer sizes for the network.
-        """
+    def __init__(self, obs_dim, act_dim, hidden=DEFAULT_HIDDEN):
         super().__init__()
         # Shared body for actor
         layers = []
@@ -59,31 +79,18 @@ class ActorCritic(nn.Module):
         self.critic = nn.Sequential(*v_layers, nn.Linear(last, 1))
 
     def act(self, x):
-        """
-        Sample action and compute log-probability and value.
-        Args:
-            x (torch.Tensor): Observation tensor of shape (batch, obs_dim).
-        Returns:
-            tuple: (action, log_prob, value), where action is a tensor (batch, act_dim).
-        """
         mu = self.actor_mean(x)
+        mu = torch.tanh(mu)
         std = self.log_std.exp().expand_as(mu)
         dist = torch.distributions.Normal(mu, std)
-        action = dist.rsample()  # Reparameterized sample
+        action = dist.rsample()
         log_prob = dist.log_prob(action).sum(dim=-1)
         value = self.critic(x).squeeze(-1)
         return action, log_prob, value
 
     def evaluate(self, x, action):
-        """
-        Evaluate log-probability, entropy, and value for given action.
-        Args:
-            x (torch.Tensor): Observation tensor of shape (batch, obs_dim).
-            action (torch.Tensor): Action tensor of shape (batch, act_dim).
-        Returns:
-            tuple: (log_prob, entropy, value).
-        """
         mu = self.actor_mean(x)
+        mu = torch.tanh(mu)                    # ← fixed (must match act())
         std = self.log_std.exp().expand_as(mu)
         dist = torch.distributions.Normal(mu, std)
         log_prob = dist.log_prob(action).sum(dim=-1)
@@ -96,16 +103,16 @@ class PPOAgent(BaseAgent):
     def __init__(
         self,
         env,
-        lr=3e-4,
-        gamma=0.99,
-        lam=0.95,
-        clip_eps=0.2,
-        epochs=8,
-        minibatch=64,
-        rollout_steps=2048,
-        hidden=(128, 128),
-        value_loss_coef=0.5,
-        entropy_coef=0.01,
+        lr=DEFAULT_LR,
+        gamma=DEFAULT_GAMMA,
+        lam=DEFAULT_LAM,
+        clip_eps=DEFAULT_CLIP_EPS,
+        epochs=DEFAULT_EPOCHS,
+        minibatch=DEFAULT_MINIBATCH,
+        rollout_steps=DEFAULT_ROLLOUT_STEPS,
+        hidden=DEFAULT_HIDDEN,
+        value_loss_coef=DEFAULT_VALUE_LOSS_COEF,
+        entropy_coef=DEFAULT_ENTROPY_COEF,
         device=None,
     ):
         super().__init__(env, algo_name="ppo")
@@ -119,7 +126,7 @@ class PPOAgent(BaseAgent):
         self.obs_dim = self.n_joints + 3 * len(self.entity_names)
         self.act_dim = self.n_joints
 
-        # Hyperparameters
+        # Hyperparameters (now using the top defaults)
         self.gamma = gamma
         self.lam = lam
         self.clip_eps = clip_eps
@@ -157,6 +164,7 @@ class PPOAgent(BaseAgent):
         with torch.no_grad():
             action_t, log_prob_t, value_t = self.ac.act(obs_t)
         action = action_t.squeeze(0).cpu().numpy()
+        # action = np.clip(action, -1.0, 1.0)          # ← (prevents out-of-bound actions) Do I need this?
         action = np.round(action, decimals=DECIMAL_PLACES)
         log_prob = float(log_prob_t.item())
         value = float(value_t.item())
@@ -168,7 +176,7 @@ class PPOAgent(BaseAgent):
         Append transition to buffer.
         """
         if self.buffer_size >= self.rollout_steps:
-            return  # wait for learn()
+            return
         idx = self.buffer_size
         self.buffer["obs"][idx] = obs
         self.buffer["act"][idx] = action
@@ -178,7 +186,6 @@ class PPOAgent(BaseAgent):
         self.buffer["done"][idx] = float(done)
         self.buffer_size += 1
 
-        # store next state for bootstrap
         self.last_next_obs = next_obs
         self.last_done = bool(done)
 
@@ -186,10 +193,9 @@ class PPOAgent(BaseAgent):
         """
         Called every step — updates only when buffer ready or episode done.
         """
-        if (self.buffer_size < self.rollout_steps) and not self.last_done:
+        if (self.buffer_size < self.rollout_steps):
             return
 
-        # bootstrap value
         if self.last_next_obs is None:
             last_val = 0.0
         else:
@@ -197,17 +203,14 @@ class PPOAgent(BaseAgent):
             with torch.no_grad():
                 last_val = float(self.ac.critic(s_t).item())
 
-        # compute GAE + returns
         adv, ret = self._compute_gae_returns(last_val)
 
-        # convert buffers
         s_t = torch.tensor(self.buffer["obs"][:self.buffer_size], dtype=torch.float32, device=self.device)
         a_t = torch.tensor(self.buffer["act"][:self.buffer_size], dtype=torch.float32, device=self.device)
         logp_t = torch.tensor(self.buffer["logp"][:self.buffer_size], dtype=torch.float32, device=self.device)
         adv_t = torch.tensor(adv, dtype=torch.float32, device=self.device)
         ret_t = torch.tensor(ret, dtype=torch.float32, device=self.device)
 
-        # updates
         n = self.buffer_size
         inds = np.arange(n)
         for _ in range(self.epochs):
@@ -226,7 +229,6 @@ class PPOAgent(BaseAgent):
                 loss.backward()
                 self.opt.step()
 
-        # clear
         self._clear_buffer()
 
     # ---- utilities ----

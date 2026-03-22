@@ -1,4 +1,4 @@
-#environment.py
+# environment/environment.py
 """
 Environment wrapper around PandaController.
 Exposes a Gym-like API: reset(), step(action).
@@ -11,59 +11,60 @@ These functions are available:
 
 import time
 import numpy as np
-from controller.panda_controller import PandaController, JOINTS, LIMITS
-from reward.reward import compute_reward, reset_reward
+from controller.panda_controller import PandaController
+from reward.sparse_reward import compute_reward, reset_reward
 from utils.env_utils import normalize_obs, denormalize_action, action_to_dict
 
-
-class PandaEnv:
-    def __init__(self, joints, limits, entities, loop_hz=10, workspace_range=0.85, max_steps=100):
-        """
-        Args:
-            joints: list of joint names
-            limits: list of (low, high) tuples for each joint
-            entities: set/list of entity names to track
-            loop_hz: control frequency
-            workspace_range: max workspace distance in meters (≈ robot reach)
-        """
+class PandaEnv:   # kept name so your existing code doesn't break
+    def __init__(self, joints, limits, entities, workspace_range=0.85, max_steps=100,
+                 model_name="panda", world_name="panda_world", ee_link_name="panda_hand",
+                 reward_type="dense", loop_hz=50):
+        
         self.joints = joints
         self.limits = limits
         self.entities = entities
-        self.ctrl = PandaController(joints)
-        self.ctrl.start_pose_monitoring()
+        self.workspace_range = workspace_range
+        self.max_steps = max_steps
+        self.reward_type = reward_type
         self.dt = 1.0 / loop_hz
         self.step_count = 0
-        self.max_steps = max_steps
-        self.workspace_range = workspace_range
+
+        # ← now passes the config to controller using explicit keyword arguments
+        self.ctrl = PandaController(
+            joint_names=joints, 
+            model_name=model_name, 
+            world_name=world_name, 
+            ee_link_name=ee_link_name, 
+            entities=entities
+        )
+        
+        # Note: start_pose_monitoring() is already called inside PandaController.__init__
+        # so you don't strictly need to call it again here, but it's safe if you do.
 
     def reset(self):
         """Reset robot + reward, return initial normalized state."""
-        # pos = self.ctrl.get_entity_positions()  # Print latest entity positions
-        # print(f"[state] Positions: {pos}\n")
         self.ctrl.reset()
-
-        # time.sleep(0.4)
         reset_reward()
-
-        # time.sleep(self.dt)
         self.step_count = 0
 
         obs = {
             "joints": self.ctrl.get_joint_states(),
-            "entities": self.ctrl.get_entity_positions(),
-            "ee_pose": self.ctrl.get_end_effector_pose()    #Include this in future
+            "entities": self.ctrl.get_entity_positions()
+            # "ee_pose": self.ctrl.get_end_effector_pose()    # Include this in future
         }
         return normalize_obs(obs, self.joints, self.limits, self.entities, self.workspace_range)
 
-    def step(self, action):                                 # The newly introduced end effector pose (position and orientation) also needs to be used for reward calculation, so we need to add it to the observation space
+    def step(self, action):                                 
         """
         Apply action, step sim, return (state, reward, done, info).
         Action can be a NumPy array or dict.
         """
         if not isinstance(action, dict):
-            action = denormalize_action(action, self.joints, self.limits)  # <--- add this
-        # Convert action to dict for PandaController
-        action_dict = action_to_dict(action, self.joints)
+            action = denormalize_action(action, self.joints, self.limits)  
+            action_dict = action_to_dict(action, self.joints)
+        else:
+            action_dict = action
+            
         self.ctrl.set_joint_positions(action_dict)
         time.sleep(self.dt)
 
@@ -71,11 +72,13 @@ class PandaEnv:
         obs = {
             "joints": self.ctrl.get_joint_states(),
             "entities": self.ctrl.get_entity_positions()
-            # "ee_pose": self.ctrl.get_end_effector_pose()    #Include this in future, but it would need major changes
+            # "ee_pose": self.ctrl.get_end_effector_pose()    # Include this in future, but it would need major changes
         }
+        
         state = normalize_obs(obs, self.joints, self.limits, self.entities, self.workspace_range)
 
         # Reward + termination
+        # Note: You may want to pass self.reward_type to compute_reward in the future!
         reward = compute_reward(obs, self.entities, self.limits)   # ← still same line
 
         self.step_count += 1

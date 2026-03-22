@@ -1,6 +1,6 @@
 <?xml version="1.0" ?>
 <sdf version="1.7">
-  <world name="panda_world">
+  <world name="world_5dof">
     <physics name="1ms" type="ignored">
       <max_step_size>0.001</max_step_size>
       <real_time_factor>10.0</real_time_factor>
@@ -68,7 +68,7 @@
             <line own="top" target="top"/>
           </anchors>
         </ignition-gui>
-        <model_name>panda</model_name>
+        <model_name>robot_5dof</model_name>
       </plugin>
     </gui>
     <light type="directional" name="sun">
@@ -111,12 +111,11 @@
       </link>
     </model>
     <include>
-      <name>panda</name>
-      <uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/Panda with Ignition position controller model</uri>
+      <uri>model://robot_5dof</uri>
       <pose>0.2 0 1.025 0 0 0</pose>
-      <plugin filename="gz-sim-joint-state-publisher-system" name="gz::sim::systems::JointStatePublisher">
-        <topic>/model/panda/joint_state</topic>
-      </plugin>
+      <plugin filename="gz-sim-joint-state-publisher-system"
+              name="gz::sim::systems::JointStatePublisher">
+        <topic>/model/robot_5dof/joint_state</topic>  </plugin>
     </include>
     <include>
       <uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/Table</uri>

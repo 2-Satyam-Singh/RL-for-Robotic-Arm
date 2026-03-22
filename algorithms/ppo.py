@@ -42,7 +42,7 @@ from algorithms.base import BaseAgent
 # If training feels slow later, you can lower rollout_steps to 1024.
 # Do NOT change hidden layers or buffer size unless you add more entities.
 
-DEFAULT_LR = 3e-4
+DEFAULT_LR = 0.0003
 DEFAULT_GAMMA = 0.99
 DEFAULT_LAM = 0.95
 DEFAULT_CLIP_EPS = 0.2
@@ -157,6 +157,11 @@ class PPOAgent(BaseAgent):
         self.last_next_obs = None
         self.last_done = False
 
+    @property
+    def _rollout_buffer(self):
+        """Helper property so train.py can safely check len(algo._rollout_buffer)"""
+        return [None] * self.buffer_size
+
     # ---- API used by Training loop ----
     def select_action(self, obs):
         """Return action array."""
@@ -164,7 +169,7 @@ class PPOAgent(BaseAgent):
         with torch.no_grad():
             action_t, log_prob_t, value_t = self.ac.act(obs_t)
         action = action_t.squeeze(0).cpu().numpy()
-        # action = np.clip(action, -1.0, 1.0)          # ← (prevents out-of-bound actions) Do I need this?
+        # action = np.clip(action, -1.0, 1.0)          # ← This line is causing training to become unstable
         action = np.round(action, decimals=DECIMAL_PLACES)
         log_prob = float(log_prob_t.item())
         value = float(value_t.item())

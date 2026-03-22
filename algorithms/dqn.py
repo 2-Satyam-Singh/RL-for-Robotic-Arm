@@ -16,7 +16,7 @@ from algorithms.base import BaseAgent
 # ==========================================
 # HYPERPARAMETERS
 # ==========================================
-DEFAULT_LR = 1e-3
+DEFAULT_LR = 0.0001
 DEFAULT_GAMMA = 0.99
 DEFAULT_BATCH_SIZE = 64
 DEFAULT_BUFFER_SIZE = 100_000
@@ -85,7 +85,9 @@ class DQNAgent(BaseAgent):
         super().__init__(env, algo_name="dqn")
         self.n_joints = len(env.joints)
         self.entity_names = sorted(list(env.entities)) if env.entities else []
-        self.obs_dim = self.n_joints + 3 * len(self.entity_names)
+        
+        # UPDATED: Dimension calculation now safely accounts for the 7 End-Effector values
+        self.obs_dim = self.n_joints + (3 * len(self.entity_names)) + 7
         
         # 3 primitive actions per joint: 0 (Decrease), 1 (Stay), 2 (Increase)
         self.n_primitives = 3
@@ -190,3 +192,5 @@ class DQNAgent(BaseAgent):
         if os.path.exists(p):
             self.q_net.load_state_dict(torch.load(p, map_location=self.device))
             self.target_net.load_state_dict(self.q_net.state_dict())
+        else:
+            print(f"Warning: Model file {p} not found.")

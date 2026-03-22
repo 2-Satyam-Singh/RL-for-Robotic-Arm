@@ -1,41 +1,67 @@
-# test.py
+# scripts/test.py
 """
-Evaluation script for a trained PPO agent in the PandaEnv.
-Loads a saved model and runs it for a few episodes without training.
+Evaluation script for a trained RL agent.
+Called by main.py. Loads a saved model and runs it for a few episodes without training.
 """
 
 import time
 import torch
-from environment.environment import PandaEnv, JOINTS, LIMITS
+import random
+import numpy as np
+
+from environment.environment import PandaEnv
 from algorithms.ppo import PPOAgent
+from algorithms.dqn import DQNAgent
 
-# Match the exact settings you used during training
-JOINTS = JOINTS[:-2]      
-LIMITS = LIMITS[:-2]
-ENTITIES = {
-    "Transformers_Age_of_Extinction_Mega_1Step_Bumblebee_Figure"
-}
-WORKSPACE_RANGE = 0.85  
-MAX_STEPS = 25
+def set_seed(seed):
+    """Sets the seed for perfectly reproducible testing runs."""
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
 
-def main():
-    print("Initializing environment...")
-    env = PandaEnv(JOINTS, LIMITS, ENTITIES, workspace_range=WORKSPACE_RANGE, max_steps=MAX_STEPS)
+def make_algo(name, env):
+    return {"dqn": DQNAgent, "ppo": PPOAgent}[name.lower()](env)
+
+def test_agent(cfg, args):
+    """Called by main.py. Runs the evaluation loop."""
     
-    print("Loading trained PPO Agent...")
-    algo = PPOAgent(env)
+    # 1. Apply the seed
+    set_seed(args.seed)
+
+    print(f"Initializing {args.robot.upper()} environment...")
+    env = PandaEnv(
+        joints=cfg["joints"],
+        limits=cfg["limits"],
+        entities=cfg["entities"],
+        workspace_range=cfg["workspace_range"],
+        model_name=cfg["model_name"],
+        world_name=cfg["world_name"],
+        ee_link_name=cfg["ee_link_name"],
+        reward_type=args.reward_type,
+        max_steps=args.max_steps
+    )
     
-    # BaseAgent automatically looks in 'models/ppo_models/' and adds the '.pth'
-    algo.load("episode_10000") 
+    # --- SAFETY NET: Clean the string in case the user typed '.pth' ---
+    clean_model_name = args.model_name.replace(".pth", "")
+    
+    print(f"Loading trained {args.algorithm.upper()} Agent '{clean_model_name}'...")
+    algo = make_algo(args.algorithm, env)
+    
+    # BaseAgent automatically looks in 'models/' (or dqn equivalent)
+    algo.load(clean_model_name) 
     
     # Put the neural network in evaluation mode
-    algo.ac.eval()
+    if hasattr(algo, 'ac'):
+        algo.ac.eval()
+    elif hasattr(algo, 'q_net'):
+        algo.q_net.eval()
 
-    num_test_episodes = 100
     successes = 0
 
     print("\nStarting evaluation...\n")
-    for ep in range(num_test_episodes):
+    for ep in range(args.episodes):
         obs = env.reset()
         done = False
         total_reward = 0.0
@@ -53,12 +79,11 @@ def main():
 
         print(f"[Test Episode {ep + 1}] Total Reward: {total_reward:.2f}")
         
-        # If your success reward is 1000, we can easily track the win rate
-        if total_reward >= 1000.0:
+        # Check success condition (adjust thresholds based on your reward function)
+        if args.reward_type == "sparse" and total_reward > 0.0:
+            successes += 1
+        elif args.reward_type == "dense" and total_reward >= 1000.0:
             successes += 1
 
-    print(f"\nEvaluation Complete!")
-    print(f"Success Rate: {successes}/{num_test_episodes} ({(successes/num_test_episodes)*100:.1f}%)")
-
-if __name__ == "__main__":
-    main()
+    print(f"\n✅ Evaluation Complete!")
+    print(f"Success Rate: {successes}/{args.episodes} ({(successes/args.episodes)*100:.1f}%)")

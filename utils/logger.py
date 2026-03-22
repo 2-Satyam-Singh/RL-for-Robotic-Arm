@@ -1,49 +1,46 @@
+# utils/logger.py
 import csv
 import os
-import time  # ← Added to track wall-clock time
+import time  
 from datetime import datetime
-import matplotlib.pyplot as plt
 import numpy as np
 
+import matplotlib
+matplotlib.use('Agg') 
+import matplotlib.pyplot as plt
 
 class Logger:
-    def __init__(self, joints, limits, entities, plot_every=50, workspace_range=0.85, algo_name="PPO", env_name="7 DOF arm"):
-        
-        self.start_time = time.time()  # ← Start the stopwatch!
-        self.times = []                # ← List to store elapsed time per episode
-
-        ts = datetime.now().strftime("%d-%m-%Y_%H-%M")
-        os.makedirs("results", exist_ok=True)
-
-        self.algo_name = algo_name.upper()
-        self.env_name = env_name
-
-        # Updated Nomenclature to differentiate Episode plots and Time plots
-        self.csv_file = f"results/log_{algo_name}_{ts}.csv"
-        self.plot_ep_file = f"results/reward_vs_ep_{algo_name}_{ts}.png"
-        self.plot_time_file = f"results/reward_vs_time_{algo_name}_{ts}.png"
-        
-        self.plot_every = plot_every
-        self.window_size = 100 
-
+    def __init__(self, run_name, algo_info, joints, limits, entities, plot_every=50, workspace_range=0.85, algo_name="PPO", env_name="3 DOF"):
+        self.start_time = time.time()  
+        self.times = []                
         self.rewards = []
+
+        # Store metadata
+        self.run_name = run_name
+        self.algo_info = algo_info
+        self.algo_name = algo_name
+        self.env_name = env_name
+        self.plot_every = plot_every
+        self.window_size = 50 # Rolling window for average and std-dev
+        
         self.joints = joints
         self.limits = limits
         self.entities = entities
         self.workspace_range = workspace_range
 
+        # Files nomenclature
+        os.makedirs("results", exist_ok=True)
+        self.csv_file = f"results/log_{run_name}.csv"
+        self.plot_ep_file = f"results/plot_{run_name}.png"
+        
+        # CSV Setup
         joint_cols = [f"joint_{j}" for j in range(len(joints))]
         entity_cols = [f"ent_{i}_{ax}" for i in range(len(entities)) for ax in "xyz"]
         action_cols = [f"action_{j}" for j in range(len(joints))]
-
-        self.header = ["episode", "reward", "done"] + joint_cols + entity_cols + action_cols
+        self.header = ["episode", "step_count", "reward", "done"] + joint_cols + entity_cols + action_cols
 
         with open(self.csv_file, "w", newline="") as f:
             csv.writer(f).writerow(self.header)
-
-        # Create two separate graphs so they don't overwrite each other
-        self.fig_ep, self.ax_ep = plt.subplots()
-        self.fig_time, self.ax_time = plt.subplots()
 
     def flatten_state_action(self, state, action, joints, entities):
         state = np.asarray(state)
@@ -54,72 +51,67 @@ class Logger:
         entity_vals = state[num_joints:num_joints + num_entity_coords]
 
         limits = np.asarray(self.limits)
-        lows = limits[:, 0]
-        highs = limits[:, 1]
+        lows, highs = limits[:, 0], limits[:, 1]
 
-        denorm_joint_vals = np.where(
-            highs > lows,
-            lows + (joint_vals + 1.0) * (highs - lows) / 2.0,
-            lows
+        denorm_joints = np.where(highs > lows, lows + (joint_vals + 1.0) * (highs - lows) / 2.0, lows)
+        denorm_entities = entity_vals * self.workspace_range
+        act_vals = np.asarray(action[:num_joints])
+
+        return np.round(np.concatenate([denorm_joints, denorm_entities, act_vals]), decimals=4).tolist()
+
+    def _draw_info_box(self, ax, elapsed_time):
+        """Adds a professional metadata box to the top right of the plot."""
+        info_text = (
+            f"Robot: {self.env_name} ({self.algo_info['DOF']} DOF)\n"
+            f"Algo: {self.algo_name}\n"
+            f"Seed: {self.algo_info['Seed']}\n"
+            f"LR: {self.algo_info['LR']}\n"
+            f"Gamma: {self.algo_info['Gamma']}\n"
+            f"Entropy: {self.algo_info['Entropy Coeff']}\n"
+            f"Time: {elapsed_time:.2f}h"
         )
-
-        denorm_entity_vals = entity_vals * self.workspace_range
-
-        if isinstance(action, dict):
-            act_vals = np.array([action.get(j, 0.0) for j in joints])
-        else:
-            act_vals = np.asarray(action[:num_joints])
-
-        return np.round(np.concatenate([denorm_joint_vals, denorm_entity_vals, act_vals]), decimals=4).tolist()
+        ax.text(0.98, 0.02, info_text, transform=ax.transAxes, fontsize=9,
+                verticalalignment='bottom', horizontalalignment='right',
+                bbox=dict(boxstyle='round', facecolor='white', alpha=0.8, edgecolor='gray'))
 
     def log_episode(self, ep, ep_data, total_reward):
         with open(self.csv_file, "a", newline="") as f:
             writer = csv.writer(f)
-            for row in ep_data:
-                writer.writerow(row)
+            writer.writerows(ep_data)
 
         self.rewards.append(total_reward)
-        
-        # Calculate elapsed time in hours (e.g., 0.5 hours)
-        elapsed_hours = (time.time() - self.start_time) / 3600.0
-        self.times.append(elapsed_hours)
+        self.times.append((time.time() - self.start_time) / 3600.0)
 
-        # Plotting logic
         if (ep + 1) % self.plot_every == 0:
+            plt.close('all')
+            fig, ax = plt.subplots(figsize=(10, 6))
             
-            # ==========================================
-            # 1. PLOT: REWARD VS EPISODE
-            # ==========================================
-            self.ax_ep.clear()
-            self.ax_ep.plot(self.rewards, color='lightblue', alpha=0.4, label='Raw Reward')
+            rewards_arr = np.array(self.rewards)
             
-            if len(self.rewards) >= self.window_size:
-                moving_avg = np.convolve(self.rewards, np.ones(self.window_size)/self.window_size, mode='valid')
-                x_axis = np.arange(self.window_size - 1, len(self.rewards))
-                self.ax_ep.plot(x_axis, moving_avg, color='blue', linewidth=2, label=f'{self.window_size}-Ep Moving Avg')
+            # --- SHADED STABILITY LOGIC ---
+            if len(rewards_arr) >= self.window_size:
+                # Calculate rolling mean and std
+                means = np.array([np.mean(rewards_arr[max(0, i-self.window_size):i+1]) for i in range(len(rewards_arr))])
+                stds = np.array([np.std(rewards_arr[max(0, i-self.window_size):i+1]) for i in range(len(rewards_arr))])
+                
+                x = np.arange(len(rewards_arr))
+                ax.plot(x, means, color='#1f77b4', label=f'{self.window_size}-Ep Moving Avg', linewidth=2)
+                ax.fill_between(x, means - stds, means + stds, color='#1f77b4', alpha=0.2, label='Stability (±1 std)')
             else:
-                early_avg = [np.mean(self.rewards[:i+1]) for i in range(len(self.rewards))]
-                self.ax_ep.plot(early_avg, color='blue', linewidth=2, label='Cumulative Avg')
+                ax.plot(rewards_arr, color='#1f77b4', alpha=0.3, label='Raw Reward')
+                cum_avg = np.cumsum(rewards_arr) / (np.arange(len(rewards_arr)) + 1)
+                ax.plot(cum_avg, color='#1f77b4', linewidth=2, label='Cumulative Avg')
 
-            self.ax_ep.set(xlabel="Episode", ylabel="Reward", title=f"Rewards vs Episodes for {self.env_name} using {self.algo_name}")
-            self.ax_ep.legend(loc="upper left")
-            self.fig_ep.savefig(self.plot_ep_file)
+            # --- STYLING ---
+            ax.set_title(f"Training Performance: {self.env_name} | {self.algo_name}", fontsize=14, fontweight='bold')
+            ax.set_xlabel("Episode", fontsize=12)
+            ax.set_ylabel("Total Reward", fontsize=12)
+            ax.grid(True, linestyle='--', alpha=0.6)
+            ax.legend(loc='upper left')
 
-            # ==========================================
-            # 2. PLOT: REWARD VS TIME (HOURS)
-            # ==========================================
-            self.ax_time.clear()
-            self.ax_time.plot(self.times, self.rewards, color='lightgreen', alpha=0.4, label='Raw Reward')
-            
-            if len(self.rewards) >= self.window_size:
-                moving_avg = np.convolve(self.rewards, np.ones(self.window_size)/self.window_size, mode='valid')
-                # Align the time array to match the moving average offset
-                time_axis = self.times[self.window_size - 1:]
-                self.ax_time.plot(time_axis, moving_avg, color='green', linewidth=2, label=f'{self.window_size}-Ep Moving Avg')
-            else:
-                early_avg = [np.mean(self.rewards[:i+1]) for i in range(len(self.rewards))]
-                self.ax_time.plot(self.times, early_avg, color='green', linewidth=2, label='Cumulative Avg')
+            # Add Info Box
+            self._draw_info_box(ax, self.times[-1])
 
-            self.ax_time.set(xlabel="Time (Hours)", ylabel="Reward", title=f"Rewards vs Time for {self.env_name} using {self.algo_name}")
-            self.ax_time.legend(loc="upper left")
-            self.fig_time.savefig(self.plot_time_file)
+            plt.tight_layout()
+            fig.savefig(self.plot_ep_file)
+            plt.close(fig)

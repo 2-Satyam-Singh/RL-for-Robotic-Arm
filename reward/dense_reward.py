@@ -61,6 +61,7 @@ def compute_reward(obs, entities, joint_limits):
     else:
         # Fallback just in case it's missing or commented out
         curr_ee_pos = [0.0, 0.0, 0.0] 
+        print("This should never happem. This reaults in always end_effector position assumed to be 0, hence no reward ever.")
 
     # Calculate current distance between gripper and object
     curr_ee_dist = euclidean_distance(curr_ee_pos, curr_obj_pos)

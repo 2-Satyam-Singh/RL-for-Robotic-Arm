@@ -126,7 +126,7 @@ RL-for-Robotic-Arm/
 ├── scripts/              # Core execution logic (train.py, test.py)
 ├── sim/                  # Gazebo SDF model files
 │   ├── serial/           # Serial kinematic arms (Panda, 3DOF, 5DOF)
-│   └── branched/         # Branched kinematic robots (coming soon)
+│   ├── branched/         # Branched kinematic robots (coming soon)
 │   └── parallel/         # Future
 ├── utils/                # Helper tools (logger.py, math utilities)
 ├── config.py             # Robot hardware configurations & limits

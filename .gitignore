@@ -1,5 +1,18 @@
 results/
 models/
+Research-Paper/
+
+# LaTeX build artifacts
+*.aux
+*.out
+*.toc
+*.synctex.gz
+*.fls
+*.fdb_latexmk
+*.bbl
+*.bcf
+*.blg
+*.run.xml
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

@@ -40,15 +40,15 @@ class Logger:
         self.plot_file       = f"results/{mode}_{run_name}.png"
         self.plot_hist_file  = f"results/{mode}_{run_name}_histogram.png"
 
-        # --- CSV SETUP (identical schema for train and test — enables future ML use) ---
+        # --- CSV SETUP (train and test share the core schema — enables future ML use) ---
         joint_cols = [f"joint_{j}" for j in range(len(joints))]
         entity_cols = [f"ent_{i}_{ax}" for i in range(len(entities)) for ax in "xyz"]
         action_cols = [f"action_{j}" for j in range(len(joints))]
-        self.header = (
-            ["episode", "step_count", "reward", "done"]
-            + joint_cols + entity_cols + action_cols
-        )
-        # Test mode appends one extra column so each row is self-contained
+        self.header = ["episode", "step_count", "reward", "done"]
+        # Test mode also records per-step wall-clock latency and an episode-level success flag
+        if mode == "test":
+            self.header += ["step_time"]
+        self.header += joint_cols + entity_cols + action_cols
         if mode == "test":
             self.header += ["is_success"]
 

@@ -96,13 +96,15 @@ def test_agent(cfg, args):
         ep_data = []
 
         while not done:
+            step_start = time.time()
             action = algo.select_action(obs)
             next_obs, reward, done, _ = env.step(action)
+            step_time = time.time() - step_start
             total_reward += reward
             steps += 1
 
             flat = log.flatten_state_action(obs, action, cfg["joints"], cfg["entities"])
-            ep_data.append([ep, steps, reward, int(done)] + flat)
+            ep_data.append([ep, steps, reward, int(done), round(step_time, 4)] + flat)
             obs = next_obs
 
         all_rewards.append(total_reward)

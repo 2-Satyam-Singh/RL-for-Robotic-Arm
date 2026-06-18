@@ -11,14 +11,15 @@ def main():
     parser.add_argument("--mode", choices=["train", "test"], default="train", help="Run training or testing")
     
     # Environment & Algo arguments
-    parser.add_argument("--robot", choices=["panda", "3dof", "5dof"], default="panda")
+    parser.add_argument("--robot", choices=list(ROBOT_CONFIGS.keys()), default="panda")
+    
     parser.add_argument("--algorithm", choices=["ppo", "dqn"], default="ppo")
     parser.add_argument("--reward_type", choices=["sparse", "dense"], default="dense")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility")
     
     # Hyperparameters
-    parser.add_argument("--episodes", type=int, default=10000)
-    parser.add_argument("--save_interval", type=int, default=1000)
+    parser.add_argument("--episodes", type=int, default=1000)
+    parser.add_argument("--save_interval", type=int, default=100)
     parser.add_argument("--max_steps", type=int, default=100)
     
     # Testing specific

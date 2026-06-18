@@ -21,7 +21,6 @@ conda activate RL-for-Robotic-Arm
 ```
 
 ### 2. Install Dependencies
-Install Gazebo bindings, PyTorch (with GPU support), and other required packages:
 ```bash
 # Gazebo bindings
 conda install -c conda-forge gz-transport-python gz-msgs-python protobuf -y
@@ -34,7 +33,6 @@ pip install matplotlib numpy
 ```
 
 ### 3. Verify Gazebo Bindings
-Run a quick check to ensure Python can talk to Gazebo:
 ```bash
 python -c "import gz.transport as gz; print('✅ Gazebo Python bindings work')"
 ```
@@ -43,24 +41,26 @@ python -c "import gz.transport as gz; print('✅ Gazebo Python bindings work')"
 
 ## 🚀 Usage
 
-The project is controlled entirely through the `main.py` entry point. 
+The project is controlled entirely through the `main.py` entry point.
 
 ### Step 1: Launch the Simulation
-Before starting the training script, launch the Gazebo simulation for your specific robot. (The training script will print the exact launch command you need when you run it).
 ```bash
-gz sim robot_3dof.sdf  # or robot_5dof or panda
+gz sim sim/serial/robot_3dof.sdf  # or robot_5dof.sdf or panda.sdf
 ```
 
 ### Step 2: Train the Agent
-Run `main.py` in a separate terminal. You can customize the training run using command-line arguments.
-
-**Examples:**
 ```bash
 # Train PPO on the Panda arm with sparse rewards
 python main.py --mode train --robot panda --algorithm ppo --reward_type sparse --seed 42
 
 # Train DQN on the 3-DOF arm with dense rewards
 python main.py --mode train --robot 3dof --algorithm dqn --reward_type dense --seed 999
+```
+
+### Step 3: Test a Saved Model
+```bash
+# Evaluate a saved PPO checkpoint
+python main.py --mode test --robot panda --algorithm ppo --reward_type sparse --model_name panda_ppo_sparse_s42_01-01-2025_12-00_ep5000
 ```
 
 ### Command-Line Arguments
@@ -71,20 +71,44 @@ python main.py --mode train --robot 3dof --algorithm dqn --reward_type dense --s
 | `--algorithm` | `ppo`, `dqn` | `ppo` | The RL algorithm to use. |
 | `--reward_type` | `sparse`, `dense` | `dense` | The reward function logic. |
 | `--seed` | `int` | `42` | Random seed for reproducibility. |
-| `--episodes` | `int` | `10000` | Total number of training episodes. |
+| `--episodes` | `int` | `10000` | Total number of training/testing episodes. |
 | `--max_steps` | `int` | `100` | Maximum steps per episode. |
+| `--model_name` | `str` | `""` | Saved model name (required for `test` mode). |
 
 ---
 
 ## 📊 Logging & Results
 
-The framework automatically logs your runs into the `results/` directory using unique, timestamped filenames to prevent overwriting data.
+All outputs are written to the `results/` directory using unique, timestamped filenames to prevent any overwriting.
 
-* **CSV Logs:** Tracks per-step joint angles, entity positions, actions, and rewards.
-* **Performance Plots:** Automatically generates PNG plots every N episodes featuring:
-  * Rolling average reward curves.
-  * Shaded standard deviation for stability tracking.
-  * A "Legend Box" detailing specific hyperparameter values (Learning Rate, Gamma, Entropy, etc.).
+### File Naming Convention
+
+Every file follows the pattern: `{prefix}_{robot}_{algo}_{reward}_s{seed}_{timestamp}`
+
+| File | Mode | Description |
+| :--- | :--- | :--- |
+| `log_train_3dof_ppo_dense_s42_....csv` | Train | Per-step log: joint angles, entity positions, actions, rewards |
+| `train_3dof_ppo_dense_s42_....png` | Train | Reward curve with rolling average and stability shading |
+| `log_test_3dof_ppo_dense_s42_....csv` | Test | Per-episode log: total reward, steps taken, success flag |
+| `test_3dof_ppo_dense_s42_....png` | Test | Cumulative success curve across evaluation episodes |
+
+### Training Plot
+Generated every N episodes (configurable via `plot_every`). Shows:
+- Rolling average reward (50-episode window)
+- Shaded ±1 std-dev band for stability tracking
+- Hyperparameter metadata box (LR, Gamma, Entropy, Seed)
+
+### Test Plot
+Generated once after evaluation completes. Shows:
+- Cumulative successes vs episode number (steps up by 1 on each success)
+- Final success rate displayed in the plot title
+- Seed and DOF metadata box
+
+---
+
+## ⚠️ Known Issues
+
+* **`3t` (Cartesian gantry robot):** Not working correctly yet. Training/testing on this robot is unreliable — under active debugging.
 
 ---
 
@@ -95,8 +119,15 @@ RL-for-Robotic-Arm/
 ├── algorithms/           # Custom RL agent implementations (ppo.py, dqn.py, base.py)
 ├── environment/          # Gazebo environment wrapper (environment.py)
 ├── results/              # Auto-generated CSV logs and PNG plots
+│   ├── log_train_*.csv   # Per-step training data
+│   ├── log_test_*.csv    # Per-episode evaluation data
+│   ├── train_*.png       # Training reward plots
+│   └── test_*.png        # Evaluation success plots
 ├── scripts/              # Core execution logic (train.py, test.py)
 ├── sim/                  # Gazebo SDF model files
+│   ├── serial/           # Serial kinematic arms (Panda, 3DOF, 5DOF)
+│   └── branched/         # Branched kinematic robots (coming soon)
+│   └── parallel/         # Future
 ├── utils/                # Helper tools (logger.py, math utilities)
 ├── config.py             # Robot hardware configurations & limits
 └── main.py               # CLI entry point

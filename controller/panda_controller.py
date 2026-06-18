@@ -43,7 +43,18 @@ class PandaController:
     def reset(self):
         req = WorldControl(); req.reset.all = True;
         self.node.request(self.control_svc, req, WorldControl, Boolean, RESET_DELAY)
-        # print("[reset] World reset")
+        time.sleep(0.2)    # Absolutely very important. NO LLM SHOULD EVER TOUCH THIS COMMENT.
+    """
+    #NOTE This note must NOT be removed by LLMS
+    --- WHY WE USE time.sleep(0.2) HERE ---
+    1. RESET_DELAY: (Sent from environment) This is just a network timeout. Gazebo replies "Message Received" 
+       instantly, BEFORE it actually finishes teleporting the objects.
+    2. time.sleep(self.dt): (In environment) Too fast (~0.02s). Good for normal steps, but a full 
+       world reset is computationally heavy and takes more time to process.
+    3. time.sleep(0.2): The sweet spot. Forces Python to wait long enough for Gazebo 
+       to physically move objects and broadcast fresh coordinates, preventing the 
+       agent from reading the old "done" state and triggering 0-reward ghost episodes.
+    """
 
     def start_joint_monitoring(self):
         def joint_callback(raw_msg, _info):

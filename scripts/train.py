@@ -22,7 +22,7 @@ def make_algo(name, env):
 
 def train_agent(cfg, args):
     """Called by main.py. Runs the training loop."""
-    
+
     set_seed(args.seed)
 
     # --- UNIQUE IDENTIFICATION ---
@@ -42,7 +42,7 @@ def train_agent(cfg, args):
     )
 
     algo = make_algo(args.algorithm, env)
-    
+
     # --- GATHER HYPERPARAMETERS FOR PLOT ---
     algo_info = {
         "LR": algo.opt.param_groups[0]['lr'],
@@ -56,13 +56,14 @@ def train_agent(cfg, args):
     log = Logger(
         run_name=run_name,
         algo_info=algo_info,
-        joints=cfg["joints"], 
-        limits=cfg["limits"], 
-        entities=cfg["entities"], 
-        plot_every=10, 
-        workspace_range=cfg["workspace_range"], 
-        algo_name=args.algorithm.upper(), 
-        env_name=args.robot.upper()
+        joints=cfg["joints"],
+        limits=cfg["limits"],
+        entities=cfg["entities"],
+        plot_every=10,
+        workspace_range=cfg["workspace_range"],
+        algo_name=args.algorithm.upper(),
+        env_name=args.robot.upper(),
+        mode="train"                        # <-- produces log_train_... and train_...
     )
 
     # --- TRACKER FOR ROLLING CHECKPOINTS ---
@@ -80,7 +81,7 @@ def train_agent(cfg, args):
             total_reward += reward
 
             algo.store_transition(obs, action, reward, next_obs, done)
-            
+
             if args.algorithm == "ppo":
                 if algo.buffer_size >= algo.rollout_steps:
                     algo.learn()
@@ -93,26 +94,24 @@ def train_agent(cfg, args):
 
         print(f"[{args.algorithm.upper()} | {args.robot.upper()} | ep {ep}] total_reward={total_reward:.2f}")
         log.log_episode(ep, ep_data, total_reward)
-        
+
         # --- ROLLING CHECKPOINT LOGIC ---
         if (ep + 1) % args.save_interval == 0:
             current_save_name = f"{run_name}_ep{ep+1}"
-            
+
             # 1. Save new model
             algo.save(current_save_name)
-            
+
             # 2. Delete old model to save disk space
             if last_saved_model:
                 try:
-                    # Assumes your algo saves inside a directory like 'models/' or 'checkpoints/'
-                    # You may need to verify the exact path attribute your BaseAgent uses
                     model_dir = getattr(algo, "model_dir", "models")
                     old_path = os.path.join(model_dir, f"{last_saved_model}.pth")
                     if os.path.exists(old_path):
                         os.remove(old_path)
                 except Exception as e:
                     print(f"Warning: Could not delete old checkpoint: {e}")
-            
+
             # 3. Update tracker
             last_saved_model = current_save_name
 

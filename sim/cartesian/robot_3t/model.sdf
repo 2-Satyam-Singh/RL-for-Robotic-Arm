@@ -1,0 +1,97 @@
+<?xml version="1.0" ?>
+<sdf version="1.7">
+  <model name="robot_3t">
+    <static>false</static>
+    <self_collide>false</self_collide>
+
+    <joint name="world_joint" type="fixed">
+      <parent>world</parent>
+      <child>base_link</child>
+    </joint>
+
+    <link name="base_link">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial><mass>10.0</mass><inertia><ixx>0.1</ixx><iyy>0.1</iyy><izz>0.1</izz></inertia></inertial>
+      <visual name="x_rail">
+        <pose>0.4 0 0 0 0 0</pose>
+        <geometry><box><size>1.0 0.05 0.05</size></box></geometry>
+        <material><ambient>1 0 0 1</ambient><diffuse>1 0 0 1</diffuse></material>
+      </visual>
+    </link>
+
+    <joint name="joint_x" type="prismatic">
+      <pose relative_to="base_link">0 0 0.05 0 0 0</pose>
+      <parent>base_link</parent>
+      <child>link_x</child>
+      <axis>
+        <xyz>1 0 0</xyz>
+        <limit><lower>0.0</lower><upper>0.8</upper><effort>500</effort><velocity>1.0</velocity></limit>
+      </axis>
+    </joint>
+
+    <link name="link_x">
+      <pose relative_to="joint_x">0 0 0 0 0 0</pose>
+      <inertial><mass>2.0</mass><inertia><ixx>0.05</ixx><iyy>0.05</iyy><izz>0.05</izz></inertia></inertial>
+      <visual name="x_carriage">
+        <geometry><box><size>0.1 0.1 0.05</size></box></geometry>
+        <material><ambient>0 1 0 1</ambient><diffuse>0 1 0 1</diffuse></material>
+      </visual>
+      <visual name="y_rail">
+        <geometry><box><size>0.05 1.0 0.05</size></box></geometry>
+        <material><ambient>0 0.8 0 1</ambient><diffuse>0 0.8 0 1</diffuse></material>
+      </visual>
+    </link>
+
+    <joint name="joint_y" type="prismatic">
+      <pose relative_to="link_x">0 0 0.05 0 0 0</pose>
+      <parent>link_x</parent>
+      <child>link_y</child>
+      <axis>
+        <xyz>0 1 0</xyz>
+        <limit><lower>-0.45</lower><upper>0.45</upper><effort>500</effort><velocity>1.0</velocity></limit>
+      </axis>
+    </joint>
+
+    <link name="link_y">
+      <pose relative_to="joint_y">0 0 0 0 0 0</pose>
+      <inertial><mass>1.5</mass><inertia><ixx>0.03</ixx><iyy>0.03</iyy><izz>0.03</izz></inertia></inertial>
+      <visual name="y_carriage">
+        <geometry><box><size>0.1 0.1 0.05</size></box></geometry>
+        <material><ambient>0 0 1 1</ambient><diffuse>0 0 1 1</diffuse></material>
+      </visual>
+      <visual name="z_rail">
+        <pose>0 0 -0.45 0 0 0</pose>
+        <geometry><cylinder><radius>0.02</radius><length>1.0</length></cylinder></geometry>
+        <material><ambient>0 0 0.8 1</ambient><diffuse>0 0 0.8 1</diffuse></material>
+      </visual>
+    </link>
+
+    <joint name="joint_z" type="prismatic">
+      <pose relative_to="link_y">0 0 0 0 0 0</pose>
+      <parent>link_y</parent>
+      <child>link_z</child>
+      <axis>
+        <xyz>0 0 1</xyz>
+        <limit><lower>-0.9</lower><upper>0.0</upper><effort>500</effort><velocity>1.0</velocity></limit>
+      </axis>
+    </joint>
+
+    <link name="link_z">
+      <pose relative_to="joint_z">0 0 -0.05 0 0 0</pose>
+      <inertial><mass>0.5</mass><inertia><ixx>0.01</ixx><iyy>0.01</iyy><izz>0.01</izz></inertia></inertial>
+      <visual name="end_effector">
+        <geometry><box><size>0.08 0.08 0.08</size></box></geometry>
+        <material><ambient>1 1 0 1</ambient><diffuse>1 1 0 1</diffuse></material>
+      </visual>
+      <collision name="col_ee">
+        <geometry><sphere><radius>0.04</radius></sphere></geometry>
+      </collision>
+    </link>
+
+    <plugin filename="gz-sim-joint-position-controller-system" name="gz::sim::systems::JointPositionController">
+      <joint_name>joint_x</joint_name><joint_name>joint_y</joint_name><joint_name>joint_z</joint_name>
+      <p_gain>1000.0</p_gain><i_gain>10.0</i_gain><d_gain>50.0</d_gain>
+      <cmd_max>100.0</cmd_max><cmd_min>-100.0</cmd_min>
+    </plugin>
+  </model>
+</sdf>

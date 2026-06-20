@@ -1,6 +1,7 @@
 results/
 models/
 Research-Paper/
+flowcharts/
 
 # LaTeX build artifacts
 *.aux

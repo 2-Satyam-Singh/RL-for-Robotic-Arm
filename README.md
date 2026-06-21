@@ -132,3 +132,13 @@ RL-for-Robotic-Arm/
 ├── config.py             # Robot hardware configurations & limits
 └── main.py               # CLI entry point
 ```
+
+---
+
+## 📜 License
+
+Copyright (C) 2026 Satyam Singh
+
+This project is licensed under the **GNU Affero General Public License v3.0 or later** (`AGPL-3.0-or-later`). See the [LICENSE](LICENSE) file for the full license text.
+
+Under the AGPL's network-use clause (§13), if you run a modified version of this software as a network service, you must make the corresponding source available to its users.

@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Satyam Singh
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 # controller/robot_controller.py  (now fully configurable)
 # Gazebo (gz-transport) implementation of the RobotBackend seam (see controller/base.py).
 import gz.transport as gz

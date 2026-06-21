@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Satyam Singh
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 # algorithms/dqn.py
 """
 Optimized DQN (PyTorch) — Discrete actions for a continuous environment.

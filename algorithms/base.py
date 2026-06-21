@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Satyam Singh
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 # algorithms/base.py
 """
 Base class for RL algorithms, providing standard save/load interface.

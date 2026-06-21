@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Satyam Singh
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 # scripts/check_env.py
 """
 Headless verification of the Gymnasium contract — no Gazebo required.

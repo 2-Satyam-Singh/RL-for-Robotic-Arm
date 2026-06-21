@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Satyam Singh
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 # example/control_random_joint.py
 """
 This is the example file to quickly test the RobotController class with random joint actions.

@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Satyam Singh
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 # ppo.py
 """
 PPOAgent (PyTorch) — on-policy, compatible with environment_0_5.py.

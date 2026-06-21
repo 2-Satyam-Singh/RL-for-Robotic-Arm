@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Satyam Singh
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 # reward.py
 """
 Reward shaping for RobotEnv (v0_5) - UPDATED VERSION

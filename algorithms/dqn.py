@@ -86,8 +86,10 @@ class DQNAgent(BaseAgent):
         self.n_joints = len(env.joints)
         self.entity_names = sorted(list(env.entities)) if env.entities else []
         
-        # UPDATED: Dimension calculation now safely accounts for the 7 End-Effector values
-        self.obs_dim = self.n_joints + (3 * len(self.entity_names)) + 7
+        # Single source of truth: obs dim comes from the env's Gym observation_space
+        # (this also removes the old, mismatched "+ 7 end-effector" assumption that
+        #  crashed store_transition on the first step).
+        self.obs_dim = int(np.prod(env.observation_space.shape))
         
         # 3 primitive actions per joint: 0 (Decrease), 1 (Stay), 2 (Increase)
         self.n_primitives = 3

@@ -10,7 +10,7 @@ import random
 import numpy as np
 from datetime import datetime
 
-from environment.environment import PandaEnv
+from environment.environment import RobotEnv
 from algorithms.ppo import PPOAgent
 from algorithms.dqn import DQNAgent
 from utils.logger import Logger
@@ -39,7 +39,7 @@ def test_agent(cfg, args):
     run_name = f"{args.robot}_{args.algorithm}_{args.reward_type}_s{args.seed}_{ts}"
 
     print(f"Initializing {args.robot.upper()} environment...")
-    env = PandaEnv(
+    env = RobotEnv(
         joints=cfg["joints"],
         limits=cfg["limits"],
         entities=cfg["entities"],
@@ -89,7 +89,7 @@ def test_agent(cfg, args):
     print(f"\n🚀 Starting evaluation for {args.episodes} episodes...\n")
 
     for ep in range(args.episodes):
-        obs = env.reset()
+        obs, _ = env.reset()
         done = False
         total_reward = 0.0
         steps = 0
@@ -98,7 +98,8 @@ def test_agent(cfg, args):
         while not done:
             step_start = time.time()
             action = algo.select_action(obs)
-            next_obs, reward, done, _ = env.step(action)
+            next_obs, reward, terminated, truncated, info = env.step(action)
+            done = terminated or truncated
             step_time = time.time() - step_start
             total_reward += reward
             steps += 1
@@ -111,11 +112,9 @@ def test_agent(cfg, args):
         all_steps.append(steps)
 
         # --- SUCCESS CHECK ---
-        # Reaching exactly max_steps means the agent never truly succeeded — treat as failure
-        if args.reward_type == "sparse":
-            is_success = total_reward > 0.0 and steps < args.max_steps
-        else:
-            is_success = total_reward >= 1000.0 and steps < args.max_steps
+        # Success = the episode terminated on the task goal (object knocked off),
+        # as opposed to truncating at max_steps. The env reports this in info.
+        is_success = bool(info.get("is_success", terminated))
 
         if is_success:
             successes += 1

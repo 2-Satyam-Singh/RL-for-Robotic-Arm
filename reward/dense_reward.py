@@ -1,6 +1,6 @@
 # reward/dense_reward.py
 """
-Reward shaping for PandaEnv - DENSE VERSION
+Reward shaping for RobotEnv - DENSE VERSION
 Uses Potential-Based Reward Shaping to guide the agent to the object,
 push it, and drop it, without allowing it to "farm" points by shaking.
 """

@@ -1,6 +1,6 @@
 # example/control_random_joint.py
 """
-This is the example file to quickly test the PandaController class with random joint actions. 
+This is the example file to quickly test the RobotController class with random joint actions.
 It demonstrates how to get joint states, set random joint positions, and retrieve the end-effector pose after actions. 
 The code includes comments to guide you through each step of the process.
 """
@@ -10,13 +10,13 @@ import time
 
 # Ensure you run this from root: python -m example.control_random_joint
 from config import ROBOT_CONFIGS
-from controller.panda_controller import PandaController
+from controller.robot_controller import RobotController
 
 random.seed(42)
 LOOP_FREQUENCY = 1
 
 def main():
-    parser = argparse.ArgumentParser(description="Test PandaController with random joint actions.")
+    parser = argparse.ArgumentParser(description="Test RobotController with random joint actions.")
     parser.add_argument("--robot", choices=["panda", "3dof", "5dof"], default="panda")
     args = parser.parse_args()
 
@@ -26,7 +26,7 @@ def main():
     limits = cfg["limits"]
 
     # Initialize controller with config parameters
-    ctrl = PandaController(
+    ctrl = RobotController(
         joint_names=joints,
         model_name=cfg["model_name"],
         world_name=cfg["world_name"],

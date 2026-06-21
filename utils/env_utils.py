@@ -23,6 +23,7 @@ def normalize_obs(obs, joints, limits, entities, workspace_range):
         val = obs["joints"].get(j, 0.0)
         if high > low:
             norm_val = 2.0 * (val - low) / (high - low) - 1.0  # scale to [-1, 1]
+            norm_val = float(np.clip(norm_val, -1.0, 1.0))     # keep obs truthful to the Box
         else:
             norm_val = 0.0
         joint_vals.append(norm_val)
@@ -48,7 +49,7 @@ def denormalize_action(action, joints, limits):
 
 def action_to_dict(action, joints):
     """
-    Convert action (array or dict) to dict expected by PandaController.
+    Convert action (array or dict) to dict expected by RobotController.
     If array, assume same order as joints.
     """
     if isinstance(action, dict):

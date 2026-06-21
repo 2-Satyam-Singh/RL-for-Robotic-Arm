@@ -122,9 +122,9 @@ class PPOAgent(BaseAgent):
         self.workspace_range = getattr(env, "workspace_range", 0.85)
         self.n_joints = len(self.joint_names)
 
-        # Dimensions
-        self.obs_dim = self.n_joints + 3 * len(self.entity_names)
-        self.act_dim = self.n_joints
+        # Dimensions — single source of truth: the env's Gymnasium spaces
+        self.obs_dim = int(np.prod(env.observation_space.shape))
+        self.act_dim = int(np.prod(env.action_space.shape))
 
         # Hyperparameters (now using the top defaults)
         self.gamma = gamma

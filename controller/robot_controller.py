@@ -1,4 +1,5 @@
-# controller/panda_controller.py  (now fully configurable)
+# controller/robot_controller.py  (now fully configurable)
+# Gazebo (gz-transport) implementation of the RobotBackend seam (see controller/base.py).
 import gz.transport as gz
 from gz.msgs.double_pb2 import Double
 from gz.msgs.world_control_pb2 import WorldControl
@@ -10,7 +11,7 @@ import time
 DECIMAL_PLACES = 2
 RESET_DELAY = 0
 
-class PandaController:
+class RobotController:
     def __init__(self, joint_names, model_name="panda", world_name="panda_world",
                  ee_link_name="panda_hand", entities=None):
         self.model_name = model_name

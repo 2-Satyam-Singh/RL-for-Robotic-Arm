@@ -4,7 +4,7 @@ from datetime import datetime
 import numpy as np
 import torch
 
-from environment.environment import PandaEnv
+from environment.environment import RobotEnv
 from algorithms.dqn import DQNAgent
 from algorithms.ppo import PPOAgent
 from utils.logger import Logger
@@ -29,7 +29,7 @@ def train_agent(cfg, args):
     ts = datetime.now().strftime("%d-%m-%Y_%H-%M")
     run_name = f"{args.robot}_{args.algorithm}_{args.reward_type}_s{args.seed}_{ts}"
 
-    env = PandaEnv(
+    env = RobotEnv(
         joints=cfg["joints"],
         limits=cfg["limits"],
         entities=cfg["entities"],
@@ -70,17 +70,20 @@ def train_agent(cfg, args):
     last_saved_model = None
 
     for ep in range(args.episodes):
-        obs = env.reset()
+        obs, _ = env.reset()
         done = False
         total_reward = 0.0
         ep_data = []
 
         while not done:
             action = algo.select_action(obs)
-            next_obs, reward, done, _ = env.step(action)
+            next_obs, reward, terminated, truncated, _ = env.step(action)
+            done = terminated or truncated
             total_reward += reward
 
-            algo.store_transition(obs, action, reward, next_obs, done)
+            # store `terminated` (not `done`): on a time-limit truncation the value
+            # should bootstrap, so the buffer's terminal flag must exclude truncation.
+            algo.store_transition(obs, action, reward, next_obs, terminated)
 
             if args.algorithm == "ppo":
                 if algo.buffer_size >= algo.rollout_steps:

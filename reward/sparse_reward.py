@@ -1,6 +1,6 @@
 # reward.py
 """
-Reward shaping for PandaEnv (v0_5) - UPDATED VERSION
+Reward shaping for RobotEnv (v0_5) - UPDATED VERSION
 Massive reward for success, plus a 100-point reward for significant object movement.
 """
 

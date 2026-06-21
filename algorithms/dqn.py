@@ -110,6 +110,8 @@ class DQNAgent(BaseAgent):
         self.loss_fn = nn.SmoothL1Loss()
         self.buffer = ReplayBuffer(self.obs_dim, DEFAULT_BUFFER_SIZE)
 
+        self.gamma = DEFAULT_GAMMA
+
         # Exploration params
         self.epsilon = DEFAULT_EPSILON_START
         self.epsilon_step = (DEFAULT_EPSILON_START - DEFAULT_EPSILON_END) / DEFAULT_EPSILON_DECAY
@@ -174,7 +176,7 @@ class DQNAgent(BaseAgent):
         with torch.no_grad():
             next_online_actions = self.q_net(s2_t).argmax(1, keepdim=True)
             next_target_q = self.target_net(s2_t).gather(1, next_online_actions).squeeze(1)
-            target = r_t + (1.0 - d_t) * DEFAULT_GAMMA * next_target_q
+            target = r_t + (1.0 - d_t) * self.gamma * next_target_q
 
         loss = self.loss_fn(q_taken, target)
 

@@ -22,14 +22,7 @@ conda activate RL-for-Robotic-Arm
 
 ### 2. Install Dependencies
 ```bash
-# Gazebo bindings
-conda install -c conda-forge gz-transport-python gz-msgs-python protobuf -y
-
-# PyTorch (Update cudatoolkit version based on your system)
-conda install pytorch torchvision torchaudio pytorch-cuda=12.8 -c pytorch -c nvidia -y
-
-# Additional ML libraries
-pip install matplotlib numpy
+conda install -c conda-forge -c pytorch -c nvidia --file requirements.txt -y
 ```
 
 ### 3. Verify Gazebo Bindings

@@ -1,7 +1,9 @@
 gz-transport-python
 gz-msgs-python
-gz-msgs
 protobuf
-numpy
-matplotlib
 pytorch
+torchvision
+torchaudio
+pytorch-cuda=12.4
+matplotlib
+numpy

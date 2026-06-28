@@ -34,9 +34,19 @@ def test_agent(cfg, args):
 
     set_seed(args.seed)
 
+    # ML = distilled scikit-learn/XGBoost policy; otherwise an RL agent (ppo/dqn).
+    is_ml = args.algorithm.lower() == "ml"
+
     # --- UNIQUE IDENTIFICATION (mirrors train.py convention) ---
+    # For distilled runs the label is the canonical model type (LR/RF/SVM/XGBoost)
+    # so logs, filenames and plots read e.g. "panda_RF_sparse_...".
     ts = datetime.now().strftime("%d-%m-%Y_%H-%M")
-    run_name = f"{args.robot}_{args.algorithm}_{args.reward_type}_s{args.seed}_{ts}"
+    if is_ml:
+        from algorithms.ml_policy import resolve_model_type
+        algo_label = resolve_model_type(args.ml_model)
+    else:
+        algo_label = args.algorithm.upper()
+    run_name = f"{args.robot}_{algo_label}_{args.reward_type}_s{args.seed}_{ts}"
 
     print(f"Initializing {args.robot.upper()} environment...")
     env = PandaEnv(
@@ -51,16 +61,29 @@ def test_agent(cfg, args):
         max_steps=args.max_steps
     )
 
-    clean_model_name = args.model_name.replace(".pth", "")
+    if is_ml:
+        # Distilled model: loads models/<TYPE>/<file> + models/SCALER/<file>.
+        # Short filenames like "7dof.pkl" or "7dof" both work.
+        from algorithms.ml_policy import MLPolicyAgent
+        print(f"Loading distilled {algo_label} model '{args.model_name}'...")
+        algo = MLPolicyAgent(env, model_type=args.ml_model)
+        algo.load(args.model_name)
+    else:
+        clean_model_name = args.model_name.replace(".pth", "")
+        print(f"Loading trained {algo_label} Agent '{clean_model_name}'...")
+        algo = make_algo(args.algorithm, env)
+        algo.load(clean_model_name)
 
-    print(f"Loading trained {args.algorithm.upper()} Agent '{clean_model_name}'...")
-    algo = make_algo(args.algorithm, env)
-    algo.load(clean_model_name)
+        # Greedy (mean-action) evaluation when requested; otherwise the policy
+        # still samples exploration noise at test time (legacy behaviour).
+        algo.deterministic = getattr(args, "deterministic", False)
+        if algo.deterministic:
+            print("   (deterministic eval: using mean action, no exploration noise)")
 
-    if hasattr(algo, 'ac'):
-        algo.ac.eval()
-    elif hasattr(algo, 'q_net'):
-        algo.q_net.eval()
+        if hasattr(algo, 'ac'):
+            algo.ac.eval()
+        elif hasattr(algo, 'q_net'):
+            algo.q_net.eval()
 
     # --- LOGGER SETUP (test mode) ---
     algo_info = {
@@ -76,7 +99,7 @@ def test_agent(cfg, args):
         limits=cfg["limits"],
         entities=cfg["entities"],
         workspace_range=cfg["workspace_range"],
-        algo_name=args.algorithm.upper(),
+        algo_name=algo_label,
         env_name=args.robot.upper(),
         mode="test"                         # <-- produces log_test_... and test_...
     )
@@ -90,6 +113,9 @@ def test_agent(cfg, args):
 
     for ep in range(args.episodes):
         obs = env.reset()
+        # Distilled policy keeps per-episode kinematic state (velocity/history); clear it.
+        if hasattr(algo, "reset_episode"):
+            algo.reset_episode()
         done = False
         total_reward = 0.0
         steps = 0
@@ -137,7 +163,7 @@ def test_agent(cfg, args):
     success_rate = (successes / args.episodes) * 100
 
     print("\n" + "=" * 50)
-    print(f"🏆 EVALUATION REPORT: {args.robot.upper()} | {args.algorithm.upper()}")
+    print(f"🏆 EVALUATION REPORT: {args.robot.upper()} | {algo_label}")
     print("=" * 50)
     print(f"Total Episodes Tested : {args.episodes}")
     print(f"Success Rate          : {successes}/{args.episodes} ({success_rate:.1f}%)")

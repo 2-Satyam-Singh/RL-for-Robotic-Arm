@@ -78,12 +78,15 @@ class ActorCritic(nn.Module):
             last = h
         self.critic = nn.Sequential(*v_layers, nn.Linear(last, 1))
 
-    def act(self, x):
+    def act(self, x, deterministic=False):
         mu = self.actor_mean(x)
         mu = torch.tanh(mu)
         std = self.log_std.exp().expand_as(mu)
         dist = torch.distributions.Normal(mu, std)
-        action = dist.rsample()
+        # deterministic=True returns the greedy mean action (no exploration
+        # noise) — the correct mode for fair evaluation/deployment. Sampling is
+        # kept for training (exploration) and for the log_prob it provides.
+        action = mu if deterministic else dist.rsample()
         log_prob = dist.log_prob(action).sum(dim=-1)
         value = self.critic(x).squeeze(-1)
         return action, log_prob, value
@@ -167,7 +170,8 @@ class PPOAgent(BaseAgent):
         """Return action array."""
         obs_t = torch.tensor(obs, dtype=torch.float32, device=self.device).unsqueeze(0)
         with torch.no_grad():
-            action_t, log_prob_t, value_t = self.ac.act(obs_t)
+            action_t, log_prob_t, value_t = self.ac.act(
+                obs_t, deterministic=getattr(self, "deterministic", False))
         action = action_t.squeeze(0).cpu().numpy()
         # action = np.clip(action, -1.0, 1.0)          # ← This line is causing training to become unstable
         action = np.round(action, decimals=DECIMAL_PLACES)

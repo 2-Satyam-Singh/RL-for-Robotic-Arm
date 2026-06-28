@@ -1,0 +1,19 @@
+# LaTeX build output
+*.aux
+*.out
+*.toc
+*.log
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+*.bbl
+*.bcf
+*.blg
+*.run.xml
+
+# Compiled PDF (regenerate with pdflatex)
+*.pdf
+
+# Redundant copies of results/models (tracked at repo root via results/ gitignore note)
+models/
+results/

@@ -1,6 +1,5 @@
 results/
 models/
-Research-Paper/
 
 # LaTeX build artifacts
 *.aux

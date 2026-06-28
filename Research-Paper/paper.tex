@@ -175,7 +175,7 @@ Tree ensembles \cite{breiman, xgboost} and linear models are attractive on
 constrained hardware due to small footprints and deterministic, low-latency
 inference. Their use as \emph{distillation targets} for a continuous-control RL
 policy across a family of morphologies, with an explicit footprint/latency
-analysis, is the gap this paper addresses.
+analysis, is the gap we address.
 
 %==============================================================================
 \section{Background: Multi-Morphology PPO Teacher}
@@ -768,7 +768,7 @@ controllers across 3--7~DoF arms. Footprint and latency reveal a clear
 trade-off: the linear student is dramatically smaller and faster than the neural
 teacher, while the random forest gives the most reliable control at a heavy
 runtime cost---and closed-loop success, not one-step regression accuracy, is what
-separates the students. Most notably, on the redundant 7-DoF arm---where the PPO
+separates the students. On the redundant 7-DoF arm---where the PPO
 teacher's success proves to be largely an artefact of its exploration noise and
 nearly vanishes under greedy evaluation---the deterministic random-forest student
 recovers a deployable controller the teacher does not itself possess. Distillation

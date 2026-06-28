@@ -1,9 +1,3 @@
-%==============================================================================
-% Distilling RL Manipulation Policies into Lightweight Supervised Models
-% IEEE conference paper (IEEEtran). Compiles on Overleaf / TeXLive (IEEEtran is
-% standard). Figures live in images/. \TBD / \figplaceholder remain defined as
-% helpers for future placeholders; the current draft has none outstanding.
-%==============================================================================
 \documentclass[conference]{IEEEtran}
 \IEEEoverridecommandlockouts
 
@@ -19,13 +13,6 @@
 \usepackage[hidelinks]{hyperref}
 
 \graphicspath{{images/}}
-
-% --- placeholder helpers: visible markers for values/figures to fill later ----
-\newcommand{\TBD}[1]{\textcolor{red}{\textbf{[TBD: #1]}}}
-\newcommand{\figplaceholder}[2]{% #1 = width fraction, #2 = caption-ish hint
-  \fbox{\parbox[c][3.2cm][c]{#1\linewidth}{\centering\color{red}\small
-  [FIGURE PLACEHOLDER]\\#2\\ \emph{drop generated PNG into images/ and
-  replace this box with \textbackslash includegraphics}}}}
 
 \begin{document}
 
@@ -331,15 +318,7 @@ through one framework.
 \draw[faint] (teacher.south) |- (distill.east);
 \draw[faint] (distill.south) -- (students.north);
 \end{tikzpicture}}
-\caption{Configuration-driven control flow of the framework, read left to right.
-A single \texttt{main.py}/\texttt{config.py} entry point branches (orange
-decisions) on \emph{morphology} (3--7~DoF, auto-resizing the policy I/O), on the
-\emph{reward}, and on the \emph{mode}. \textbf{Train} selects a learning
-algorithm (PPO/DQN) and produces a teacher checkpoint; an offline notebook
-distils that teacher into compact LR/SVM/RF/XGBoost students. \textbf{Test}
-runs either the RL teacher or any distilled student through the same
-closed-loop evaluator. Each stacked group is a set of mutually exclusive
-(if/else) routes.}
+\caption{Configuration-driven control flow of the framework.}
 \label{fig:framework}
 \end{figure*}
 
@@ -367,7 +346,7 @@ The teacher is a standard Proximal Policy Optimization agent \cite{schulman} wit
 a Gaussian actor and a separate critic, each a two-layer ($128{\times}128$)
 $\tanh$ multilayer perceptron; the $\tanh$ output naturally respects the $[-1,1]$
 action range. The same algorithm and hyperparameters are used for all
-morphologies. Teacher training curves are shown in Fig.~\ref{fig:teacher}.
+morphologies. Teacher training curves (moving-average reward, shaded $\pm$1 std) are shown in Fig.~\ref{fig:teacher}; lower-DoF arms converge faster.
 
 \begin{figure}[t]
 \centering
@@ -379,8 +358,7 @@ morphologies. Teacher training curves are shown in Fig.~\ref{fig:teacher}.
   \includegraphics[width=\textwidth]{plot_panda_ppo_sparse_s42_17-03-2026_23-15.png}
   \caption{7-DoF Panda}
 \end{subfigure}
-\caption{Representative sparse-PPO teacher training curves (moving-average reward,
-shaded $\pm1$ std). Lower-DoF arms converge faster.}
+\caption{PPO teacher training curves.}
 \label{fig:teacher}
 \end{figure}
 
@@ -394,9 +372,7 @@ students to delta-action targets, and redeploy the students in closed loop.
 \begin{figure*}[t]
 \centering
 \includegraphics[width=0.92\textwidth]{distillation_pipeline.png}
-\caption{Distillation pipeline: a frozen PPO teacher generates trajectories that
-supervise compact student models, which are then deployed as standalone
-closed-loop controllers.}
+\caption{Distillation pipeline.}
 \label{fig:pipeline}
 \end{figure*}
 
@@ -514,22 +490,14 @@ closed-loop evaluation over $100$ episodes per cell at a fixed seed.
 \begin{subfigure}[b]{0.32\textwidth}
   \includegraphics[width=\textwidth]{compare_all_success_heatmap.png}\caption{Success-rate matrix}
 \end{subfigure}
-\caption{Per-morphology closed-loop comparison. (a)--(e) Cumulative fraction of
-episodes solved by a given step, one curve per policy (steeper/higher is better);
-(f) the full success-rate matrix as a heatmap. The teacher leads on the low-DoF
-arms, but on the 7-DoF Panda the random-forest student dominates.}
+\caption{Per-morphology closed-loop comparison.}
 \label{fig:overlay}
 \end{figure*}
 
 \begin{figure*}[t]
 \centering
 \includegraphics[width=0.92\textwidth]{compare_all_success_bars.png}
-\caption{Closed-loop task success of the four distilled students and the PPO
-teacher across all five morphologies (100 episodes each, primary run). The
-random forest is the most reliable student and surpasses the teacher on the
-7-DoF Panda; this gap holds across two teacher checkpoints and six re-trainings,
-tracing a saturating teacher--student transfer curve
-(see Table~\ref{tab:rf_variance}).}
+\caption{Closed-loop task success across all morphologies.}
 \label{fig:bars}
 \end{figure*}
 
@@ -652,16 +620,7 @@ data, so the student is $0\%$ by construction---a fixed anchor for the curve.}
 \begin{figure}[t]
 \centering
 \includegraphics[width=\columnwidth]{transfer_curve.png}
-\caption{Teacher--student transfer on the 7-DoF Panda. The deterministic RF
-student's success (faint dots: individual runs; filled circles: mean $\pm$std) is
-plotted against PPO teacher success, anchored at the trivial $(0,0)$ point. Open
-circles re-score the \emph{same} teachers \emph{greedily} (mean action): their
-success collapses to $0$--$1\%$ (dashed arrows) while the student is unchanged,
-showing the teacher's sampled success is exploration-noise-borrowed. The student
-sits well above the student\,$=$\,teacher diagonal here (amplification region);
-on the lower-DoF arms (squares; other morphologies), whose teachers are genuinely
-competent \emph{despite} the same action noise, the students fall below the
-diagonal (saturation region).}
+\caption{Teacher--student transfer curve on the 7-DoF Panda.}
 \label{fig:transfer}
 \end{figure}
 
@@ -852,14 +811,6 @@ continuous control actions for robotic grasping with reinforcement learning,'' i
 \bibitem{elguea} \'I.~Elguea-Aguinaco \emph{et al.}, ``A review on reinforcement
 learning for contact-rich robotic manipulation tasks,'' \emph{Robotics and
 Computer-Integrated Manufacturing}, vol.~81, p.~102517, 2023.
-
-\bibitem{panda_gym} Q.~Gallou\'edec, N.~Cazin, E.~Dellandr\'ea, and L.~Chen,
-``panda-gym: Open-source goal-conditioned environments for robotic learning,'' in
-\emph{4th Robot Learning Workshop, NeurIPS}, 2021.
-
-\bibitem{luo} Y.~Luo, Y.~Dong, L.~Zhang, Y.~Wang, and F.~Sun, ``Balance between
-efficient and effective learning: Dense2Sparse reward shaping for robot
-manipulation with environment uncertainty,'' \emph{arXiv:2003.02740}, 2020.
 
 \end{thebibliography}
 

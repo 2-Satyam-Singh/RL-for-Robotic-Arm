@@ -1,6 +1,11 @@
 results/
 models/
 
+# Claude Code / AI tooling
+CLAUDE.md
+.claude/
+utils/image.png
+
 # LaTeX build artifacts
 *.aux
 *.out
